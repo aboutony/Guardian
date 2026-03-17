@@ -429,6 +429,13 @@ const infoIcon = L.divIcon({
   iconAnchor: [8, 8],
 });
 
+const hospitalCrossIcon = L.divIcon({
+  html: `<div style="background-color: #007AFF; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 8px rgba(0,122,255,0.5); font-size: 18px; color: white; font-weight: bold;">✚</div>`,
+  className: 'hospital-cross-icon',
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+});
+
 // --- Map Components ---
 const MapResizeHandler = () => {
   const map = useMap();
@@ -548,7 +555,7 @@ const ZoomControls = ({ isRTL }: { isRTL: boolean }) => {
 };
 
 const MapComponent = React.memo(({ 
-  theme, alerts, services, earthquakes, activeFilter, routePath, focusedAlertId, setFocusedAlertId, onBoundsChange, isReportingMode, onMapClick, lowPowerMode, searchLocation, onZoom
+  theme, alerts, services, earthquakes, activeFilter, routePath, focusedAlertId, setFocusedAlertId, onBoundsChange, isReportingMode, onMapClick, lowPowerMode, searchLocation, onZoom, hospitalData
 }: any) => {
   const { t, language, isRTL } = useLanguage();
   const [pulse, setPulse] = useState(1);
@@ -710,6 +717,36 @@ const MapComponent = React.memo(({
                       )}
                     </div>
                   )}
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MarkerClusterGroup>
+
+        {/* Overpass API Hospital Markers */}
+        <MarkerClusterGroup chunkedLoading>
+          {(hospitalData || []).map((hospital: any) => (
+            <Marker
+              key={hospital.id}
+              position={[hospital.lat, hospital.lon]}
+              icon={hospitalCrossIcon}
+            >
+              <Popup>
+                <div className="p-3 min-w-[200px]" style={{ direction: 'ltr' }}>
+                  <p style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px', color: '#007AFF' }}>HOSPITAL</p>
+                  <h3 style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px', color: '#111' }}>{hospital.name}</h3>
+                  <a
+                    href="tel:140"
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                      width: '100%', padding: '10px', borderRadius: '12px',
+                      backgroundColor: '#FF3B30', color: 'white', fontWeight: 800,
+                      fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em',
+                      textDecoration: 'none', textAlign: 'center'
+                    }}
+                  >
+                    📞 Call Emergency (140)
+                  </a>
                 </div>
               </Popup>
             </Marker>
@@ -1022,6 +1059,38 @@ export default function App() {
   const [earthquakes, setEarthquakes] = useState<any[]>([]);
   const [seismicAlert, setSeismicAlert] = useState<any | null>(null);
 
+  // --- Overpass API: Fetch Lebanon Hospitals ---
+  const [hospitalData, setHospitalData] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchHospitals = async () => {
+      try {
+        const cached = localStorage.getItem('guardian-hospitals-cache');
+        if (cached) {
+          setHospitalData(JSON.parse(cached));
+        }
+
+        const query = `[out:json];node["amenity"="hospital"](33.0,35.0,34.7,36.6);out;`;
+        const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
+        if (!response.ok) throw new Error('Overpass API request failed');
+        const data = await response.json();
+        const hospitals = (data.elements || []).map((el: any) => ({
+          id: el.id,
+          lat: el.lat,
+          lon: el.lon,
+          name: el.tags?.name || el.tags?.['name:en'] || el.tags?.['name:ar'] || 'Hospital'
+        }));
+        setHospitalData(hospitals);
+        localStorage.setItem('guardian-hospitals-cache', JSON.stringify(hospitals));
+      } catch (error) {
+        console.error('Failed to fetch hospitals from Overpass:', error);
+        const cached = localStorage.getItem('guardian-hospitals-cache');
+        if (cached) setHospitalData(JSON.parse(cached));
+      }
+    };
+    fetchHospitals();
+  }, []);
+
   const fetchEarthquakes = useCallback(async () => {
     try {
       const response = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson');
@@ -1220,6 +1289,14 @@ export default function App() {
       <div className={`h-[100dvh] w-full overflow-hidden font-sans transition-colors duration-500 ${theme === 'dark' ? 'bg-[#121212] text-white' : 'bg-zinc-50 text-zinc-900'}`}>
       <main className="relative h-[100dvh] w-full overflow-hidden">
         {/* Floating UI Layer: Slim Search & Route Bar */}
+        {/* GUARDIAN Brand Logo — Fixed Top-Left */}
+        <div className="absolute top-4 left-4 z-[2000] pointer-events-auto">
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl backdrop-blur-2xl border shadow-lg ${theme === 'dark' ? 'bg-[#121212]/60 border-white/10' : 'bg-white/60 border-zinc-200'}`}>
+            <Shield className="w-5 h-5 text-danger" />
+            <span className="text-sm font-black uppercase tracking-widest">Guardian</span>
+          </div>
+        </div>
+
         <div className="absolute top-0 left-0 right-0 z-[2000] pointer-events-none flex flex-col items-center">
           {!isOnline && (
             <div className="w-full bg-zinc-800/80 backdrop-blur-md text-white p-1.5 flex items-center justify-center gap-2 border-b border-white/5 pointer-events-auto">
@@ -1296,6 +1373,7 @@ export default function App() {
             focusedAlertId={focusedAlertId} setFocusedAlertId={setFocusedAlertId} onBoundsChange={setMapBounds} 
             isReportingMode={isReportingMode} onMapClick={handleMapClick} lowPowerMode={lowPowerMode || activeFilter === 'airstrike' || !isOnline}
             searchLocation={searchLocation}
+            hospitalData={hospitalData}
           />
           
           {isReportingMode && (
