@@ -96,6 +96,11 @@ const TRANSLATIONS: Record<Language, any> = {
     selectDistrict: "Select District",
     report: "REPORT",
     routing: "ROUTING...",
+    safePathFound: "Safe Path Found",
+    estimatedTime: "Estimated travel time",
+    minutes: "min",
+    dangerAvoided: "Danger zones avoided",
+    lowBandwidthActive: "Low Bandwidth — Tiles Disabled",
     submitReport: "SUBMIT REPORT",
     dangerType: "Select Danger Type",
     details: "Additional Details (Optional)",
@@ -203,6 +208,11 @@ const TRANSLATIONS: Record<Language, any> = {
     selectDistrict: "اختر المنطقة",
     report: "تبليغ",
     routing: "جاري التوجيه...",
+    safePathFound: "تم العثور على مسار آمن",
+    estimatedTime: "الوقت المقدر",
+    minutes: "دقيقة",
+    dangerAvoided: "تم تجنب مناطق الخطر",
+    lowBandwidthActive: "نطاق منخفض — الخرائط معطلة",
     submitReport: "إرسال التقرير",
     dangerType: "اختر نوع الخطر",
     details: "تفاصيل إضافية (اختياري)",
@@ -312,6 +322,11 @@ const TRANSLATIONS: Record<Language, any> = {
     selectDistrict: "Sélectionner District",
     report: "SIGNALER",
     routing: "CALCUL...",
+    safePathFound: "Chemin Sûr Trouvé",
+    estimatedTime: "Temps de trajet estimé",
+    minutes: "min",
+    dangerAvoided: "Zones dangereuses évitées",
+    lowBandwidthActive: "Basse Bande — Tuiles Désactivées",
     submitReport: "ENVOYER LE RAPPORT",
     dangerType: "Type de Danger",
     details: "Détails (Optionnel)",
@@ -602,12 +617,14 @@ const MapComponent = React.memo(({
         <MapClickHandler isReportingMode={isReportingMode} onMapClick={onMapClick} />
         <MapUpdater focusedAlertId={focusedAlertId} alerts={alerts} searchLocation={searchLocation} />
         <MapEvents />
-        <TileLayer
-          url={theme === 'dark' 
-            ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?lang=${language}` 
-            : `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png?lang=${language}`}
-          attribution='&copy; OpenStreetMap contributors'
-        />
+        {!lowPowerMode && (
+          <TileLayer
+            url={theme === 'dark' 
+              ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?lang=${language}` 
+              : `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png?lang=${language}`}
+            attribution='&copy; OpenStreetMap contributors'
+          />
+        )}
         
         <ZoomControls isRTL={isRTL} />
 
@@ -1210,6 +1227,8 @@ export default function App() {
   const [endDistrict, setEndDistrict] = useState('');
   const [routePath, setRoutePath] = useState<[number, number][]>([]);
   const [isRouting, setIsRouting] = useState(false);
+  const [routeInfo, setRouteInfo] = useState<{ duration: number; distance: number; dangersAvoided: number } | null>(null);
+  const [safeRouteToast, setSafeRouteToast] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isReportingMode, setIsReportingMode] = useState(false);
   const [selectedDangerType, setSelectedDangerType] = useState('');
@@ -1298,36 +1317,76 @@ export default function App() {
     return district ? district.name[language] : id;
   }, [language]);
 
-  const calculateSafestRoute = useCallback(() => {
+  const calculateSafestRoute = useCallback(async () => {
     setIsRouting(true);
-    setTimeout(() => {
+    setRouteInfo(null);
+    try {
+      const start = districts.find(d => d.id === startDistrict);
+      const end = districts.find(d => d.id === endDistrict);
+      if (!start || !end) { setIsRouting(false); return; }
+
+      const startCoord = start.bounds[0];
+      const endCoord = end.bounds[0];
+      const dangers = alerts.filter(a => a.type === 'airstrike' || a.type === 'road_closure');
+
+      // Build waypoints that avoid danger zones by pushing midpoints away
+      const avoidWaypoints: [number, number][] = [];
+      let dangersAvoided = 0;
+      const BUFFER = 0.08; // ~8km buffer around danger
+
+      // Sample points along the direct line and check proximity to dangers
+      const steps = 6;
+      for (let i = 1; i < steps; i++) {
+        const frac = i / steps;
+        let wp: [number, number] = [
+          startCoord[0] + (endCoord[0] - startCoord[0]) * frac,
+          startCoord[1] + (endCoord[1] - startCoord[1]) * frac
+        ];
+        let nudged = false;
+        dangers.forEach(d => {
+          const dist = Math.sqrt(Math.pow(d.coordinates[0] - wp[0], 2) + Math.pow(d.coordinates[1] - wp[1], 2));
+          if (dist < BUFFER) {
+            const dx = wp[0] - d.coordinates[0];
+            const dy = wp[1] - d.coordinates[1];
+            const angle = Math.atan2(dy, dx);
+            wp = [wp[0] + Math.cos(angle) * BUFFER * 1.5, wp[1] + Math.sin(angle) * BUFFER * 1.5];
+            nudged = true;
+            dangersAvoided++;
+          }
+        });
+        if (nudged) avoidWaypoints.push(wp);
+      }
+
+      // Build OSRM request with waypoints
+      const allPoints = [startCoord, ...avoidWaypoints, endCoord];
+      const coordStr = allPoints.map(p => `${p[1]},${p[0]}`).join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const coords: [number, number][] = route.geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+        setRoutePath(coords);
+        const durationMin = Math.round(route.duration / 60);
+        const distanceKm = Math.round(route.distance / 1000);
+        setRouteInfo({ duration: durationMin, distance: distanceKm, dangersAvoided });
+        setSafeRouteToast(true);
+        setTimeout(() => setSafeRouteToast(false), 5000);
+      } else {
+        // Fallback to direct line if OSRM fails
+        setRoutePath([startCoord, endCoord]);
+      }
+    } catch (error) {
+      console.error('OSRM routing failed, using fallback:', error);
       const start = districts.find(d => d.id === startDistrict);
       const end = districts.find(d => d.id === endDistrict);
       if (start && end) {
-        const startCoord = start.bounds[0];
-        const endCoord = end.bounds[0];
-        
-        // Smart "Safe Path" logic: Avoid airstrike markers
-        const airstrikes = alerts.filter(a => a.type === 'airstrike' || a.type === 'road_closure');
-        let midPoint: [number, number] = [(startCoord[0] + endCoord[0]) / 2, (startCoord[1] + endCoord[1]) / 2];
-        
-        // If midpoint is near an airstrike or road closure, nudge it significantly
-        airstrikes.forEach(strike => {
-          const dist = Math.sqrt(Math.pow(strike.coordinates[0] - midPoint[0], 2) + Math.pow(strike.coordinates[1] - midPoint[1], 2));
-          if (dist < 0.1) { 
-            // Nudge away from the danger
-            const dx = midPoint[0] - strike.coordinates[0];
-            const dy = midPoint[1] - strike.coordinates[1];
-            const angle = Math.atan2(dy, dx);
-            midPoint[0] += Math.cos(angle) * 0.15;
-            midPoint[1] += Math.sin(angle) * 0.15;
-          }
-        });
-
-        setRoutePath([startCoord, midPoint, endCoord]);
+        setRoutePath([start.bounds[0], end.bounds[0]]);
       }
-      setIsRouting(false);
-    }, 1500);
+    }
+    setIsRouting(false);
   }, [startDistrict, endDistrict, alerts]);
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
