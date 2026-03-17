@@ -1099,7 +1099,7 @@ export default function App() {
       const response = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson');
       const data = await response.json();
       
-      const beirut = { lat: 33.89, lng: 35.50 };
+      const beirut = { lat: 33.8, lng: 35.5 };
       
       const filtered = data.features.filter((f: any) => {
         const [lng, lat] = f.geometry.coordinates;
@@ -1307,6 +1307,50 @@ export default function App() {
               <span className="text-[9px] font-black uppercase tracking-widest">{t.workingOffline}</span>
             </div>
           )}
+
+          {/* SEISMIC ALERT BANNER — High-priority */}
+          <AnimatePresence>
+            {seismicAlert && (
+              <motion.div
+                initial={{ y: -60, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -60, opacity: 0 }}
+                transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+                className="w-full pointer-events-auto"
+              >
+                <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(90deg, #7C3AED, #A855F7, #DC2626)' }}>
+                  <div className="absolute inset-0 animate-pulse" style={{ background: 'linear-gradient(90deg, rgba(124,58,237,0.3), rgba(220,38,38,0.3), rgba(124,58,237,0.3))', backgroundSize: '200% 100%' }} />
+                  <div className="relative flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="relative shrink-0">
+                        <div className="absolute inset-0 w-8 h-8 rounded-full bg-white/20 animate-ping" />
+                        <div className="relative w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                          <Waves className="w-4 h-4 text-white" />
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-white/90">
+                          ⚠ {t.seismicAlert}
+                        </p>
+                        <p className="text-xs font-bold text-white truncate">
+                          {t.magnitude}: {seismicAlert.mag} {t.richter} — {seismicAlert.place}
+                        </p>
+                        <p className="text-[9px] font-bold text-white/70 uppercase tracking-wider">
+                          {t.seismicInstructions}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSeismicAlert(null)}
+                      className="shrink-0 ml-2 p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5 text-white" />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           
           <div className="w-full max-w-xl p-3 space-y-2">
             {/* Slim Glassmorphism Search/Route Bar */}
