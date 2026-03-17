@@ -1218,6 +1218,7 @@ export default function App() {
 
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('guardian-theme') as Theme) || 'dark');
   const [lowPowerMode, setLowPowerMode] = useState(() => localStorage.getItem('guardian-lowpower') === 'true');
+  const [lowBandwidthMode, setLowBandwidthMode] = useState(() => localStorage.getItem('guardian-lowbandwidth') === 'true');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1293,9 +1294,10 @@ export default function App() {
     localStorage.setItem('guardian-lang', language);
     localStorage.setItem('guardian-theme', theme);
     localStorage.setItem('guardian-lowpower', lowPowerMode.toString());
+    localStorage.setItem('guardian-lowbandwidth', lowBandwidthMode.toString());
     document.documentElement.dir = isRTL ? 'rtl' : 'ltr';
     document.documentElement.lang = language;
-  }, [language, theme, lowPowerMode, isRTL]);
+  }, [language, theme, lowPowerMode, lowBandwidthMode, isRTL]);
 
   const filteredAlerts = useMemo(() => {
     if (!mapBounds) return alerts;
@@ -1327,37 +1329,55 @@ export default function App() {
 
       const startCoord = start.bounds[0];
       const endCoord = end.bounds[0];
+      // Active dangers: Red (airstrike) and Orange (road_closure)
       const dangers = alerts.filter(a => a.type === 'airstrike' || a.type === 'road_closure');
 
-      // Build waypoints that avoid danger zones by pushing midpoints away
+      // 500m Safety Buffer (~0.0045 degrees at Lebanon's latitude)
+      const SAFETY_BUFFER = 0.0045;
+      const DETOUR_MULTIPLIER = 2.5; // Push waypoint 2.5x buffer distance away
+
+      // Helper: check if a point is within the buffer of any danger
+      const isNearDanger = (pt: [number, number]) => {
+        return dangers.some(d => {
+          const dist = Math.sqrt(Math.pow(d.coordinates[0] - pt[0], 2) + Math.pow(d.coordinates[1] - pt[1], 2));
+          return dist < SAFETY_BUFFER;
+        });
+      };
+
+      // Helper: nudge a point away from all nearby dangers
+      const nudgeAway = (pt: [number, number]): [number, number] => {
+        let [lat, lng] = pt;
+        dangers.forEach(d => {
+          const dist = Math.sqrt(Math.pow(d.coordinates[0] - lat, 2) + Math.pow(d.coordinates[1] - lng, 2));
+          if (dist < SAFETY_BUFFER) {
+            const dx = lat - d.coordinates[0];
+            const dy = lng - d.coordinates[1];
+            const angle = Math.atan2(dy, dx);
+            lat += Math.cos(angle) * SAFETY_BUFFER * DETOUR_MULTIPLIER;
+            lng += Math.sin(angle) * SAFETY_BUFFER * DETOUR_MULTIPLIER;
+          }
+        });
+        return [lat, lng];
+      };
+
+      // Phase 1: Pre-route — sample the direct line and inject detour waypoints
       const avoidWaypoints: [number, number][] = [];
       let dangersAvoided = 0;
-      const BUFFER = 0.08; // ~8km buffer around danger
-
-      // Sample points along the direct line and check proximity to dangers
-      const steps = 6;
+      const steps = 10;
       for (let i = 1; i < steps; i++) {
         const frac = i / steps;
         let wp: [number, number] = [
           startCoord[0] + (endCoord[0] - startCoord[0]) * frac,
           startCoord[1] + (endCoord[1] - startCoord[1]) * frac
         ];
-        let nudged = false;
-        dangers.forEach(d => {
-          const dist = Math.sqrt(Math.pow(d.coordinates[0] - wp[0], 2) + Math.pow(d.coordinates[1] - wp[1], 2));
-          if (dist < BUFFER) {
-            const dx = wp[0] - d.coordinates[0];
-            const dy = wp[1] - d.coordinates[1];
-            const angle = Math.atan2(dy, dx);
-            wp = [wp[0] + Math.cos(angle) * BUFFER * 1.5, wp[1] + Math.sin(angle) * BUFFER * 1.5];
-            nudged = true;
-            dangersAvoided++;
-          }
-        });
-        if (nudged) avoidWaypoints.push(wp);
+        if (isNearDanger(wp)) {
+          wp = nudgeAway(wp);
+          avoidWaypoints.push(wp);
+          dangersAvoided++;
+        }
       }
 
-      // Build OSRM request with waypoints
+      // Build OSRM request with avoidance waypoints
       const allPoints = [startCoord, ...avoidWaypoints, endCoord];
       const coordStr = allPoints.map(p => `${p[1]},${p[0]}`).join(';');
       const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
@@ -1366,16 +1386,52 @@ export default function App() {
       const data = await response.json();
 
       if (data.routes && data.routes.length > 0) {
-        const route = data.routes[0];
-        const coords: [number, number][] = route.geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+        let route = data.routes[0];
+        let coords: [number, number][] = route.geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+
+        // Phase 2: Post-route intersection check — if OSRM path still intersects danger, re-route
+        const intersectingDangers = dangers.filter(d =>
+          coords.some(pt => {
+            const dist = Math.sqrt(Math.pow(d.coordinates[0] - pt[0], 2) + Math.pow(d.coordinates[1] - pt[1], 2));
+            return dist < SAFETY_BUFFER;
+          })
+        );
+
+        if (intersectingDangers.length > 0) {
+          // Inject additional detour waypoints for each intersecting danger
+          const extraWaypoints: [number, number][] = intersectingDangers.map(d => {
+            const angle = Math.atan2(
+              endCoord[0] - startCoord[0],
+              endCoord[1] - startCoord[1]
+            ) + Math.PI / 2; // perpendicular
+            return [
+              d.coordinates[0] + Math.cos(angle) * SAFETY_BUFFER * 3,
+              d.coordinates[1] + Math.sin(angle) * SAFETY_BUFFER * 3
+            ] as [number, number];
+          });
+          dangersAvoided += intersectingDangers.length;
+
+          // Re-route with extra waypoints
+          const retryPoints = [startCoord, ...avoidWaypoints, ...extraWaypoints, endCoord];
+          const retryStr = retryPoints.map(p => `${p[1]},${p[0]}`).join(';');
+          const retryUrl = `https://router.project-osrm.org/route/v1/driving/${retryStr}?overview=full&geometries=geojson`;
+          try {
+            const retryRes = await fetch(retryUrl);
+            const retryData = await retryRes.json();
+            if (retryData.routes && retryData.routes.length > 0) {
+              route = retryData.routes[0];
+              coords = route.geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+            }
+          } catch { /* use first route if retry fails */ }
+        }
+
         setRoutePath(coords);
         const durationMin = Math.round(route.duration / 60);
         const distanceKm = Math.round(route.distance / 1000);
         setRouteInfo({ duration: durationMin, distance: distanceKm, dangersAvoided });
         setSafeRouteToast(true);
-        setTimeout(() => setSafeRouteToast(false), 5000);
+        setTimeout(() => setSafeRouteToast(false), 3000);
       } else {
-        // Fallback to direct line if OSRM fails
         setRoutePath([startCoord, endCoord]);
       }
     } catch (error) {
@@ -1532,9 +1588,9 @@ export default function App() {
 
         <div className="absolute inset-0 z-0 h-[100dvh] w-full">
           <MapComponent 
-            theme={!isOnline ? 'dark' : theme} alerts={alerts} services={services} earthquakes={earthquakes} activeFilter={activeFilter} routePath={routePath} 
+            theme={!isOnline ? 'dark' : lowBandwidthMode ? 'dark' : theme} alerts={alerts} services={services} earthquakes={earthquakes} activeFilter={activeFilter} routePath={routePath} 
             focusedAlertId={focusedAlertId} setFocusedAlertId={setFocusedAlertId} onBoundsChange={setMapBounds} 
-            isReportingMode={isReportingMode} onMapClick={handleMapClick} lowPowerMode={lowPowerMode || activeFilter === 'airstrike' || !isOnline}
+            isReportingMode={isReportingMode} onMapClick={handleMapClick} lowPowerMode={lowPowerMode || lowBandwidthMode || activeFilter === 'airstrike' || !isOnline}
             searchLocation={searchLocation}
             hospitalData={hospitalData}
             updateAlert={updateAlert}
@@ -1623,6 +1679,14 @@ export default function App() {
                       <div className={isRTL ? 'text-right' : ''}><p className="text-sm font-bold">{t.lowPower}</p><p className="text-[10px] text-zinc-500">{t.lowPowerDesc}</p></div>
                     </div>
                     <button onClick={() => setLowPowerMode(!lowPowerMode)} className={`w-12 h-6 rounded-full transition-all relative ${lowPowerMode ? 'bg-safety' : 'bg-zinc-700'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${lowPowerMode ? 'right-1' : 'left-1'}`} /></button>
+                  </div>
+                  {/* Low Bandwidth Mode Toggle */}
+                  <div className={`flex items-center justify-between p-4 rounded-2xl border ${lowBandwidthMode ? 'bg-warning/10 border-warning/30' : 'bg-white/5 border-white/10'} ${isRTL ? 'flex-row-reverse' : ''}`}>
+                    <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                      <WifiOff className={`w-5 h-5 ${lowBandwidthMode ? 'text-warning' : 'text-zinc-500'}`} />
+                      <div className={isRTL ? 'text-right' : ''}><p className="text-sm font-bold">{t.lowBandwidth}</p><p className="text-[10px] text-zinc-500">{t.optimized3G}</p></div>
+                    </div>
+                    <button onClick={() => setLowBandwidthMode(!lowBandwidthMode)} className={`w-12 h-6 rounded-full transition-all relative ${lowBandwidthMode ? 'bg-warning' : 'bg-zinc-700'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${lowBandwidthMode ? 'right-1' : 'left-1'}`} /></button>
                   </div>
                 </div>
               </motion.div>
@@ -1774,6 +1838,43 @@ export default function App() {
                 </div>
               </motion.div>
             </div>
+          )}
+        </AnimatePresence>
+
+        {/* Safe Path Calculated Toast */}
+        <AnimatePresence>
+          {safeRouteToast && routeInfo && (
+            <motion.div 
+              initial={{ y: 60, opacity: 0, scale: 0.9 }} 
+              animate={{ y: 0, opacity: 1, scale: 1 }} 
+              exit={{ y: 60, opacity: 0, scale: 0.9 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className={`fixed bottom-28 left-1/2 -translate-x-1/2 z-[4000] backdrop-blur-2xl rounded-3xl border shadow-2xl px-6 py-4 flex items-center gap-4 max-w-sm ${theme === 'dark' ? 'bg-[#121212]/80 border-safety/30' : 'bg-white/90 border-safety/40'}`}
+            >
+              <div className="p-2.5 rounded-2xl bg-safety/20">
+                <ShieldCheck className="w-6 h-6 text-safety" />
+              </div>
+              <div>
+                <p className="text-sm font-black uppercase tracking-tight text-safety">{t.safePathFound}</p>
+                <p className="text-[10px] text-zinc-500 font-bold">
+                  {routeInfo.duration} {t.minutes} · {routeInfo.dangersAvoided} {t.dangerAvoided}
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Low Bandwidth Active Banner */}
+        <AnimatePresence>
+          {lowBandwidthMode && (
+            <motion.div 
+              initial={{ y: -30, opacity: 0 }} 
+              animate={{ y: 0, opacity: 1 }} 
+              exit={{ y: -30, opacity: 0 }}
+              className="fixed top-16 left-1/2 -translate-x-1/2 z-[3500] bg-warning/90 text-black px-5 py-2 rounded-full font-black text-[10px] uppercase tracking-widest shadow-xl flex items-center gap-2"
+            >
+              <WifiOff className="w-3.5 h-3.5" />{t.lowBandwidthActive}
+            </motion.div>
           )}
         </AnimatePresence>
 
