@@ -38,7 +38,8 @@ import {
   Waves,
   Video,
   PhoneOutgoing,
-  ChevronRight
+  ChevronRight,
+  CloudOff
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { QRCodeCanvas } from 'qrcode.react';
@@ -1141,12 +1142,16 @@ export default function App() {
 
   useEffect(() => {
     const fetchHospitals = async () => {
-      try {
-        const cached = localStorage.getItem('guardian-hospitals-cache');
-        if (cached) {
-          setHospitalData(JSON.parse(cached));
-        }
+      // Always hydrate from cache first (instant offline display)
+      const cached = localStorage.getItem('guardian-hospitals-cache');
+      if (cached) {
+        try { setHospitalData(JSON.parse(cached)); } catch { /* corrupted cache */ }
+      }
 
+      // Only attempt network fetch if online
+      if (!navigator.onLine) return;
+
+      try {
         const query = `[out:json];node["amenity"="hospital"](33.0,35.0,34.7,36.6);out;`;
         const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
         if (!response.ok) throw new Error('Overpass API request failed');
@@ -1156,13 +1161,12 @@ export default function App() {
           lat: el.lat,
           lon: el.lon,
           name: el.tags?.name || el.tags?.['name:en'] || el.tags?.['name:ar'] || 'Hospital'
-        }));
+        })).slice(0, 50); // Cap at 50 for offline storage budget
         setHospitalData(hospitals);
         localStorage.setItem('guardian-hospitals-cache', JSON.stringify(hospitals));
       } catch (error) {
         console.error('Failed to fetch hospitals from Overpass:', error);
-        const cached = localStorage.getItem('guardian-hospitals-cache');
-        if (cached) setHospitalData(JSON.parse(cached));
+        // Cache already loaded above — no-op, display stays intact
       }
     };
     fetchHospitals();
@@ -1226,9 +1230,26 @@ export default function App() {
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [startDistrict, setStartDistrict] = useState('');
   const [endDistrict, setEndDistrict] = useState('');
-  const [routePath, setRoutePath] = useState<[number, number][]>([]);
+  const [routePath, setRoutePath] = useState<[number, number][]>(() => {
+    try {
+      const cached = localStorage.getItem('guardian-active-route');
+      return cached ? JSON.parse(cached) : [];
+    } catch { return []; }
+  });
+  const [routeInfo, _setRouteInfoRaw] = useState<{ duration: number; distance: number; dangersAvoided: number } | null>(() => {
+    try {
+      const cached = localStorage.getItem('guardian-active-route-info');
+      return cached ? JSON.parse(cached) : null;
+    } catch { return null; }
+  });
+  const setRouteInfoAndCache = useCallback((info: { duration: number; distance: number; dangersAvoided: number } | null) => {
+    _setRouteInfoRaw(info);
+    if (info) {
+      localStorage.setItem('guardian-active-route-info', JSON.stringify(info));
+    }
+  }, []);
   const [isRouting, setIsRouting] = useState(false);
-  const [routeInfo, setRouteInfo] = useState<{ duration: number; distance: number; dangersAvoided: number } | null>(null);
+
   const [safeRouteToast, setSafeRouteToast] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isReportingMode, setIsReportingMode] = useState(false);
@@ -1321,7 +1342,7 @@ export default function App() {
 
   const calculateSafestRoute = useCallback(async () => {
     setIsRouting(true);
-    setRouteInfo(null);
+    setRouteInfoAndCache(null);
     try {
       const start = districts.find(d => d.id === startDistrict);
       const end = districts.find(d => d.id === endDistrict);
@@ -1426,20 +1447,35 @@ export default function App() {
         }
 
         setRoutePath(coords);
+        // Cache route to LocalStorage for offline persistence
+        localStorage.setItem('guardian-active-route', JSON.stringify(coords));
         const durationMin = Math.round(route.duration / 60);
         const distanceKm = Math.round(route.distance / 1000);
-        setRouteInfo({ duration: durationMin, distance: distanceKm, dangersAvoided });
+        setRouteInfoAndCache({ duration: durationMin, distance: distanceKm, dangersAvoided });
         setSafeRouteToast(true);
         setTimeout(() => setSafeRouteToast(false), 3000);
       } else {
         setRoutePath([startCoord, endCoord]);
       }
     } catch (error) {
-      console.error('OSRM routing failed, using fallback:', error);
-      const start = districts.find(d => d.id === startDistrict);
-      const end = districts.find(d => d.id === endDistrict);
-      if (start && end) {
-        setRoutePath([start.bounds[0], end.bounds[0]]);
+      console.error('OSRM routing failed, using offline fallback:', error);
+      // Offline Shield: pull cached route if available
+      const cachedRoute = localStorage.getItem('guardian-active-route');
+      const cachedInfo = localStorage.getItem('guardian-active-route-info');
+      if (cachedRoute) {
+        try {
+          setRoutePath(JSON.parse(cachedRoute));
+          if (cachedInfo) setRouteInfoAndCache(JSON.parse(cachedInfo));
+          setSafeRouteToast(true);
+          setTimeout(() => setSafeRouteToast(false), 3000);
+        } catch { /* corrupted cache, ignore */ }
+      } else {
+        // Last resort: direct line
+        const start = districts.find(d => d.id === startDistrict);
+        const end = districts.find(d => d.id === endDistrict);
+        if (start && end) {
+          setRoutePath([start.bounds[0], end.bounds[0]]);
+        }
       }
     }
     setIsRouting(false);
@@ -1469,6 +1505,11 @@ export default function App() {
           <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl backdrop-blur-2xl border shadow-lg ${theme === 'dark' ? 'bg-[#121212]/60 border-white/10' : 'bg-white/60 border-zinc-200'}`}>
             <Shield className="w-5 h-5 text-danger" />
             <span className="text-sm font-black uppercase tracking-widest">Guardian</span>
+            {!isOnline && (
+              <div className="flex items-center gap-1 ml-1 px-2 py-0.5 rounded-lg bg-warning/15 border border-warning/30" title="Offline Mode Active">
+                <CloudOff className="w-3.5 h-3.5 text-warning" />
+              </div>
+            )}
           </div>
         </div>
 
