@@ -763,7 +763,7 @@ const MapComponent = React.memo(({
 
 // --- Sidebar removed for Ultra-Clean UI ---
 
-// --- SOS Modal ---
+// --- SOS Modal (Glassmorphism) ---
 const SOSModal = ({ isOpen, onClose, t, isRTL, theme }: any) => {
   return (
     <AnimatePresence>
@@ -774,23 +774,26 @@ const SOSModal = ({ isOpen, onClose, t, isRTL, theme }: any) => {
             animate={{ opacity: 1 }} 
             exit={{ opacity: 0 }} 
             onClick={onClose} 
-            className="absolute inset-0 bg-black/90 backdrop-blur-xl" 
+            className="absolute inset-0 bg-black/80 backdrop-blur-2xl" 
           />
           <motion.div 
             initial={{ scale: 0.9, opacity: 0, y: 20 }} 
             animate={{ scale: 1, opacity: 1, y: 0 }} 
             exit={{ scale: 0.9, opacity: 0, y: 20 }} 
-            className={`relative w-full max-w-sm rounded-[32px] p-8 text-center shadow-2xl border ${theme === 'dark' ? 'bg-[#121212] border-white/10' : 'bg-white border-zinc-200'}`}
+            className={`relative w-full max-w-sm rounded-[32px] p-8 text-center shadow-2xl border backdrop-blur-3xl ${theme === 'dark' ? 'bg-[#121212]/70 border-white/10' : 'bg-white/70 border-zinc-200'}`}
           >
             <div className="space-y-8">
               <div className="flex justify-center">
-                <div className="w-20 h-20 rounded-full bg-danger/10 flex items-center justify-center shadow-[0_0_40px_rgba(255,59,48,0.2)]">
-                  <Phone className="w-10 h-10 text-danger animate-pulse" />
+                <div className="relative">
+                  <div className="absolute inset-0 w-20 h-20 rounded-full bg-danger/20 animate-ping" />
+                  <div className="relative w-20 h-20 rounded-full bg-danger/10 flex items-center justify-center shadow-[0_0_40px_rgba(255,59,48,0.3)]">
+                    <Phone className="w-10 h-10 text-danger" />
+                  </div>
                 </div>
               </div>
               <div className="space-y-2">
                 <h2 className="text-2xl font-black uppercase tracking-tight">{t.emergency}</h2>
-                <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest">{t.directDial}</p>
+                <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest">Direct Dial</p>
               </div>
               <div className="grid grid-cols-1 gap-4">
                 <motion.a 
@@ -1385,6 +1388,20 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* Floating SOS Button - Bottom Right */}
+          <div className="absolute bottom-24 right-4 z-[2500] pointer-events-auto">
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setIsSOSModalOpen(true)}
+              className="relative w-16 h-16 rounded-full bg-danger flex items-center justify-center shadow-2xl shadow-danger/40"
+            >
+              <div className="absolute inset-0 rounded-full bg-danger animate-ping opacity-30" />
+              <div className="absolute inset-[-4px] rounded-full border-2 border-danger/50 animate-pulse" />
+              <Phone className="w-7 h-7 text-black relative z-10" />
+            </motion.button>
+            <p className="text-center mt-1 text-[8px] font-black uppercase tracking-widest text-danger">SOS</p>
+          </div>
 
           <BottomSheet 
             theme={theme} t={t} isRTL={isRTL} districts={districts} 
