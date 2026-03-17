@@ -17,6 +17,8 @@ export interface Alert {
   coordinates: [number, number];
   verified: boolean;
   isUserReported?: boolean;
+  verificationCount?: number;
+  roadOpen?: boolean;
 }
 
 export interface EssentialService {
@@ -41,10 +43,14 @@ export const districts: District[] = [
 ];
 
 export const initialAlerts: Alert[] = [
-  { id: '1', type: 'danger', location: 'Haret Hreik', districtId: 'dahieh', message: 'Confirmed Air Strike - Avoid Area', timestamp: '2m', coordinates: [33.848, 35.505], verified: true },
-  { id: '2', type: 'warning', location: 'Tyre Coast', districtId: 'tyre', message: 'Heavy Shelling Reported', timestamp: '15m', coordinates: [33.271, 35.196], verified: true },
-  { id: '3', type: 'danger', location: 'Baalbek Center', districtId: 'baalbek', message: 'Immediate Evacuation Order', timestamp: '5m', coordinates: [34.006, 36.202], verified: true },
-  { id: '4', type: 'info', location: 'Saida North', districtId: 'saida', message: 'Road Blockage - Use Alternate Route', timestamp: '45m', coordinates: [33.572, 35.381], verified: false },
+  { id: '1', type: 'danger', location: 'Haret Hreik', districtId: 'dahieh', message: 'Confirmed Air Strike - Avoid Area', timestamp: '2m', coordinates: [33.848, 35.505], verified: true, verificationCount: 12 },
+  { id: '2', type: 'warning', location: 'Tyre Coast', districtId: 'tyre', message: 'Heavy Shelling Reported', timestamp: '15m', coordinates: [33.271, 35.196], verified: true, verificationCount: 8 },
+  { id: '3', type: 'danger', location: 'Baalbek Center', districtId: 'baalbek', message: 'Immediate Evacuation Order', timestamp: '5m', coordinates: [34.006, 36.202], verified: true, verificationCount: 15 },
+  { id: '4', type: 'info', location: 'Saida North', districtId: 'saida', message: 'Road Blockage - Use Alternate Route', timestamp: '45m', coordinates: [33.572, 35.381], verified: false, verificationCount: 1 },
+  { id: 'rc1', type: 'road_closure', location: 'Qasmiyeh Bridge', districtId: 'tyre', message: 'Bridge closed due to structural damage - Use coastal road', timestamp: '5m', coordinates: [33.318, 35.265], verified: true, verificationCount: 9, roadOpen: false },
+  { id: 'rc2', type: 'road_closure', location: 'Jiyyeh Highway', districtId: 'saida', message: 'Highway blocked - Debris from shelling', timestamp: '22m', coordinates: [33.669, 35.408], verified: true, verificationCount: 6, roadOpen: false },
+  { id: 'rc3', type: 'road_closure', location: 'Damour Tunnel', districtId: 'beirut', message: 'Tunnel partially collapsed - Emergency crews on site', timestamp: '1h', coordinates: [33.733, 35.450], verified: false, verificationCount: 2, roadOpen: false },
+  { id: 'rc4', type: 'road_closure', location: 'Litani Bridge - Nabatieh', districtId: 'nabatieh', message: 'Bridge closed by ISF - Alternative via Marjayoun', timestamp: '35m', coordinates: [33.352, 35.485], verified: true, verificationCount: 11, roadOpen: false },
 ];
 
 export const essentialServices: EssentialService[] = [
@@ -124,8 +130,13 @@ export function useSafetyData() {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: 'Just now',
       verified: false,
+      verificationCount: 0,
     };
     setAlerts(prev => [alert, ...prev]);
+  }, []);
+
+  const updateAlert = useCallback((id: string, updates: Partial<Alert>) => {
+    setAlerts(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
   }, []);
 
   return {
@@ -133,6 +144,7 @@ export function useSafetyData() {
     alerts,
     services,
     addAlert,
+    updateAlert,
     locations: lebanonLocations
   };
 }

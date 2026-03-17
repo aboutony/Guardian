@@ -157,6 +157,10 @@ const TRANSLATIONS: Record<Language, any> = {
     roadClosure: "Road Closure",
     verifiedISF: "✓ Verified (ISF)",
     communityAlert: "⚠️ Community Alert",
+    stillClosed: "Still Closed",
+    roadNowOpen: "Road is Open",
+    verifiedBy: "Verified by {count} users",
+    communityVote: "Community Vote",
     earthquakes: "Earthquakes",
     seismicAlert: "SEISMIC ALERT",
     seismicInstructions: "Drop, Cover, and Hold On",
@@ -261,6 +265,10 @@ const TRANSLATIONS: Record<Language, any> = {
     roadClosure: "إغلاق طريق",
     verifiedISF: "موثوق (ISF) ✓",
     communityAlert: "بلاغ مجتمعي ⚠️",
+    stillClosed: "لا يزال مغلقاً",
+    roadNowOpen: "الطريق مفتوح",
+    verifiedBy: "تم التحقق من {count} مستخدم",
+    communityVote: "تصويت المجتمع",
     earthquakes: "هزات أرضية",
     seismicAlert: "تنبيه زلزالي",
     seismicInstructions: "انخفض، تغطَّ، وتمسك",
@@ -365,6 +373,10 @@ const TRANSLATIONS: Record<Language, any> = {
     roadClosure: "Route Fermée",
     verifiedISF: "✓ Vérifié (ISF)",
     communityAlert: "⚠️ Alerte Communautaire",
+    stillClosed: "Toujours Fermée",
+    roadNowOpen: "Route Ouverte",
+    verifiedBy: "Vérifié par {count} utilisateurs",
+    communityVote: "Vote Communautaire",
     earthquakes: "Séismes",
     seismicAlert: "ALERTE SISMIQUE",
     seismicInstructions: "Baissez-vous, abritez-vous et agrippez-vous",
@@ -555,7 +567,7 @@ const ZoomControls = ({ isRTL }: { isRTL: boolean }) => {
 };
 
 const MapComponent = React.memo(({ 
-  theme, alerts, services, earthquakes, activeFilter, routePath, focusedAlertId, setFocusedAlertId, onBoundsChange, isReportingMode, onMapClick, lowPowerMode, searchLocation, onZoom, hospitalData
+  theme, alerts, services, earthquakes, activeFilter, routePath, focusedAlertId, setFocusedAlertId, onBoundsChange, isReportingMode, onMapClick, lowPowerMode, searchLocation, onZoom, hospitalData, updateAlert
 }: any) => {
   const { t, language, isRTL } = useLanguage();
   const [pulse, setPulse] = useState(1);
@@ -620,11 +632,53 @@ const MapComponent = React.memo(({
               eventHandlers={{ click: () => setFocusedAlertId(alert.id) }}
             >
               <Popup>
-                <div className="p-2 min-w-[200px]" dir={isRTL ? 'rtl' : 'ltr'}>
+                <div className="p-2 min-w-[220px]" dir={isRTL ? 'rtl' : 'ltr'}>
                   <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${alert.type === 'airstrike' || alert.type === 'danger' || alert.type === 'road_closure' ? 'text-danger' : 'text-warning'}`}>
                     {alert.type === 'airstrike' ? t.airstrikes : alert.type === 'road_closure' ? t.roadClosure : t.dangerZone}
                   </p>
                   <p className="font-bold text-sm mb-2">{alert.message}</p>
+
+                  {/* Verification Badge */}
+                  {(alert.verificationCount || 0) >= 3 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px', padding: '4px 8px', borderRadius: '8px', backgroundColor: 'rgba(52,199,89,0.1)', border: '1px solid rgba(52,199,89,0.3)' }}>
+                      <span style={{ color: '#34C759', fontSize: '12px' }}>✓</span>
+                      <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#34C759' }}>
+                        {t.verifiedBy.replace('{count}', String(alert.verificationCount || 0))}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Road Closure Voting Buttons */}
+                  {alert.type === 'road_closure' && updateAlert && (
+                    <div style={{ marginBottom: '8px' }}>
+                      <p style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#999', marginBottom: '6px' }}>{t.communityVote}</p>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); updateAlert(alert.id, { verificationCount: (alert.verificationCount || 0) + 1, roadOpen: false }); }}
+                          style={{
+                            flex: 1, padding: '8px 6px', borderRadius: '10px', border: '1px solid rgba(255,149,0,0.4)',
+                            backgroundColor: !alert.roadOpen ? 'rgba(255,149,0,0.15)' : 'transparent',
+                            color: '#FF9500', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                          }}
+                        >
+                          ✖ {t.stillClosed}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); updateAlert(alert.id, { roadOpen: true, verificationCount: (alert.verificationCount || 0) + 1 }); }}
+                          style={{
+                            flex: 1, padding: '8px 6px', borderRadius: '10px', border: '1px solid rgba(52,199,89,0.4)',
+                            backgroundColor: alert.roadOpen ? 'rgba(52,199,89,0.15)' : 'transparent',
+                            color: '#34C759', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                          }}
+                        >
+                          ✓ {t.roadNowOpen}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between border-t pt-2">
                     <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${alert.isUserReported ? 'border-warning/50 text-warning bg-warning/5' : 'border-safety/50 text-safety bg-safety/5'}`}>
                       {alert.type === 'road_closure' && !alert.isUserReported ? t.verifiedISF : alert.isUserReported ? t.communityAlert : t.nnaVerified}
@@ -904,19 +958,22 @@ const BottomSheet = ({
             <ChevronRight className="w-5 h-5 text-indigo-500 opacity-50" />
           </motion.button>
 
-          {/* Feed Section */}
+          {/* Feed Section — 3 most recent */}
           <div className="space-y-4">
             <h3 className="text-[9px] font-black uppercase tracking-widest text-zinc-500 px-2">{t.liveSafetyFeed}</h3>
             <div className="space-y-3">
-              {filteredAlerts.map((alert: any) => (
+              {filteredAlerts.slice(0, 3).map((alert: any) => (
                 <motion.div
                   key={alert.id} layout initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
                   onClick={() => setFocusedAlertId(focusedAlertId === alert.id ? null : alert.id)}
                   className={`p-4 rounded-2xl border cursor-pointer transition-all ${focusedAlertId === alert.id ? 'bg-danger/10 border-danger' : theme === 'dark' ? 'bg-white/5 border-white/5' : 'bg-zinc-50 border-zinc-100'}`}
                 >
                   <div className="flex justify-between items-start mb-2">
-                    <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
                       <span className={`text-[8px] font-black uppercase tracking-tighter px-2 py-0.5 rounded w-fit ${alert.type === 'danger' || alert.type === 'airstrike' ? 'bg-danger text-black' : alert.type === 'road_closure' ? 'bg-warning text-black' : 'bg-safety text-black'}`}>{alert.type === 'road_closure' ? t.roadClosure : alert.type}</span>
+                      {(alert.verificationCount || 0) >= 3 && (
+                        <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-safety/10 text-safety border border-safety/30">✓ {t.verified}</span>
+                      )}
                     </div>
                     <span className="text-[8px] font-mono text-zinc-500">{alert.timestamp}</span>
                   </div>
@@ -934,7 +991,7 @@ const BottomSheet = ({
 
 // --- Main App ---
 export default function App() {
-  const { districts, alerts, services, addAlert, locations } = useSafetyData();
+  const { districts, alerts, services, addAlert, updateAlert, locations } = useSafetyData();
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('guardian-lang') as Language) || 'en');
   
   const genAI = useMemo(() => process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null, []);
@@ -1421,6 +1478,7 @@ export default function App() {
             isReportingMode={isReportingMode} onMapClick={handleMapClick} lowPowerMode={lowPowerMode || activeFilter === 'airstrike' || !isOnline}
             searchLocation={searchLocation}
             hospitalData={hospitalData}
+            updateAlert={updateAlert}
           />
           
           {isReportingMode && (
