@@ -5,8 +5,8 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-
 import L from 'leaflet';
 import { QRCodeSVG } from 'qrcode.react';
 import {
-  TRANSLATIONS, DANGER_TYPES, DISTRICT_COORDINATES, LEBANON_CENTER, DEFAULT_ZOOM,
-  SAFETY_BUFFER_METERS, OSRM_BASE_URL, FILTER_CATEGORIES, SERVICE_ICONS,
+  TRANSLATIONS, DANGER_TYPES, DISTRICT_COORDINATES, LEBANON_CENTER, LEBANON_BOUNDS,
+  DEFAULT_ZOOM, SAFETY_BUFFER_METERS, OSRM_BASE_URL, FILTER_CATEGORIES, SERVICE_ICONS,
   HOSPITAL_FALLBACK, EMERGENCY_CONTACTS,
   type Language, type Theme
 } from './constants';
@@ -25,10 +25,16 @@ const ICONS: Record<string, L.DivIcon> = {
   info: makeIcon('ℹ️', 20),
 };
 
-// ─── MapController — flies to coords on change ──────────────────────────────
+// ─── MapController — flies to coords on change (skips initial mount) ─────────
 function MapController({ center, zoom }: { center: [number, number]; zoom: number }) {
   const map = useMap();
-  useEffect(() => { map.flyTo(center, zoom, { duration: 1 }); }, [center, zoom, map]);
+  const isInitial = useRef(true);
+  useEffect(() => {
+    if (isInitial.current) { isInitial.current = false; return; }
+    map.flyTo(center, zoom, { duration: 1 });
+  }, [center, zoom, map]);
+  // Force Leaflet to recalculate size after mount (fixes 0-height bug)
+  useEffect(() => { setTimeout(() => map.invalidateSize(), 200); }, [map]);
   return null;
 }
 
@@ -239,13 +245,17 @@ export default function App() {
     <div className={`relative w-screen h-[100dvh] overflow-hidden ${bg} ${textMain}`} dir={isRtl ? 'rtl' : 'ltr'}>
 
       {/* ─── MAP ──────────────────────────────────────────────────────────── */}
-      <MapContainer center={LEBANON_CENTER} zoom={DEFAULT_ZOOM} className="w-full h-full z-0"
+      <MapContainer center={LEBANON_CENTER} zoom={DEFAULT_ZOOM}
+        style={{ height: '100dvh', width: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}
+        maxBounds={LEBANON_BOUNDS} maxBoundsViscosity={0.8}
         zoomControl={false} attributionControl={false}>
         <MapController center={mapCenter} zoom={mapZoom} />
         {!lowBandwidth && (
-          <TileLayer url={isDark
-            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-            : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'} />
+          <TileLayer
+            url={isDark
+              ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+              : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'}
+            zIndex={1} />
         )}
         {/* User location */}
         {userLocation && <Marker position={userLocation} icon={ICONS.user}>

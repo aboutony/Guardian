@@ -7,9 +7,16 @@ export type Theme = 'dark' | 'light';
 
 // ─── Map Defaults ────────────────────────────────────────────────────────────
 export const LEBANON_CENTER: [number, number] = [33.8547, 35.8623];
+export const INITIAL_CENTER = LEBANON_CENTER; // alias for cross-file compatibility
 export const DEFAULT_ZOOM = 8;
 export const SAFETY_BUFFER_METERS = 500;
 export const OSRM_BASE_URL = 'https://router.project-osrm.org/route/v1/driving';
+
+// Bounding box for Lebanon — constrains map pan area
+export const LEBANON_BOUNDS: [[number, number], [number, number]] = [
+  [32.8, 34.8],  // SW corner
+  [34.8, 36.7],  // NE corner
+];
 
 // ─── District Coordinates (routing dropdowns) ────────────────────────────────
 export const DISTRICT_COORDINATES: Record<string, [number, number]> = {
