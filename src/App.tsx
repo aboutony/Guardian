@@ -61,7 +61,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 
 // Centralized Data Hook
-import { useSafetyData, Alert, District, EssentialService } from './data/safetyData';
+import { useSafetyData, Alert, District, EssentialService, SafeCheckIn } from './data/safetyData';
 
 // Types
 type Language = 'en' | 'ar' | 'fr';
@@ -464,6 +464,13 @@ const hospitalCrossIcon = L.divIcon({
   iconAnchor: [16, 16],
 });
 
+const safeCheckInIcon = L.divIcon({
+  html: `<div style="background-color: #34C759; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 8px rgba(52,199,89,0.5); font-size: 14px; color: white; font-weight: bold;">✓</div>`,
+  className: 'safe-checkin-icon',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+});
+
 // --- Map Components ---
 const MapResizeHandler = () => {
   const map = useMap();
@@ -828,6 +835,28 @@ const MapComponent = React.memo(({
         {routePath.length > 1 && (
           <Polyline positions={routePath} pathOptions={{ color: '#007AFF', weight: 6, opacity: 0.8, dashArray: '10, 10' }} />
         )}
+
+        {/* Safe Check-in Green Ripple Markers */}
+        {(props.safeCheckIns || []).slice(0, 10).map((ci: any) => {
+          // Resolve district center for marker placement (privacy: only district center)
+          const dist = (props.districts || []).find((d: any) => d.id === ci.districtId);
+          if (!dist) return null;
+          const center: [number, number] = dist.bounds[0];
+          return (
+            <Fragment key={ci.id}>
+              <PulseCircle center={center} pulse={pulse} lowPowerMode={lowPowerMode} color="#34C759" radius={400} />
+              <Marker position={center} icon={safeCheckInIcon}>
+                <Popup>
+                  <div className="p-2 min-w-[180px]" style={{ direction: 'ltr' }}>
+                    <p style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px', color: '#34C759' }}>SAFE CHECK-IN</p>
+                    <p style={{ fontWeight: 700, fontSize: '13px', marginBottom: '4px' }}>{ci.userId} is SAFE</p>
+                    <p style={{ fontSize: '10px', color: '#999' }}>{dist.name.en} District</p>
+                  </div>
+                </Popup>
+              </Marker>
+            </Fragment>
+          );
+        })}
       </MapContainer>
     </div>
   );
@@ -919,13 +948,14 @@ const timeAgo = (createdAt: number | undefined, fallback: string): string => {
   return `${days} day${days > 1 ? 's' : ''} ago`;
 };
 
-type FeedFilter = 'all' | 'strikes' | 'roads';
+type FeedFilter = 'all' | 'strikes' | 'roads' | 'checkin';
 
 // --- Bottom Sheet ---
 const BottomSheet = ({ 
   theme, t, isRTL, districts, startDistrict, setStartDistrict, endDistrict, setEndDistrict, 
   getDistrictName, calculateSafestRoute, isRouting, routePath, handleShare, filteredAlerts,
-  focusedAlertId, setFocusedAlertId, setIsReportModalOpen, setIsVideoCallOpen, setIsSOSModalOpen
+  focusedAlertId, setFocusedAlertId, setIsReportModalOpen, setIsVideoCallOpen, setIsSOSModalOpen,
+  safeCheckIns, onSafeCheckIn, userSafeDistrict
 }: any) => {
   const [isOpen, setIsOpen] = useState(false);
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all');
@@ -1001,6 +1031,33 @@ const BottomSheet = ({
             <ChevronRight className="w-5 h-5 text-indigo-500 opacity-50" />
           </motion.button>
 
+          {/* I AM SAFE Button */}
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={onSafeCheckIn}
+            className={`w-full p-5 rounded-3xl border flex items-center justify-between group transition-all ${
+              userSafeDistrict 
+                ? 'bg-safety/20 border-safety/40 shadow-lg shadow-safety/10' 
+                : theme === 'dark' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-emerald-50 border-emerald-100'
+            }`}
+          >
+            <div className="flex items-center gap-4">
+              <div className={`relative p-3 rounded-2xl text-white ${userSafeDistrict ? 'bg-safety' : 'bg-emerald-500'}`}>
+                {userSafeDistrict && <div className="absolute inset-0 rounded-2xl bg-safety animate-ping opacity-30" />}
+                <ShieldCheck className="w-5 h-5 relative z-10" />
+              </div>
+              <div className="text-left">
+                <p className={`text-sm font-black uppercase tracking-tight ${userSafeDistrict ? 'text-safety' : 'text-emerald-500'}`}>
+                  {userSafeDistrict ? `✓ MARKED SAFE` : t.iAmSafe || 'I Am Safe'}
+                </p>
+                <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">
+                  {userSafeDistrict ? `${getDistrictName(userSafeDistrict)} District` : 'Tap to check in'}
+                </p>
+              </div>
+            </div>
+            <ChevronRight className={`w-5 h-5 opacity-50 ${userSafeDistrict ? 'text-safety' : 'text-emerald-500'}`} />
+          </motion.button>
+
           {/* Feed Section — Expanded Scrollable History */}
           <div className="space-y-4">
             <div className="flex items-center justify-between px-2">
@@ -1016,6 +1073,7 @@ const BottomSheet = ({
                 { id: 'all' as FeedFilter, label: 'All' },
                 { id: 'strikes' as FeedFilter, label: 'Strikes' },
                 { id: 'roads' as FeedFilter, label: 'Roads' },
+                { id: 'checkin' as FeedFilter, label: 'Check-in' },
               ]).map(btn => (
                 <button
                   key={btn.id}
@@ -1023,7 +1081,8 @@ const BottomSheet = ({
                   className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all border ${
                     feedFilter === btn.id 
                       ? btn.id === 'strikes' ? 'bg-danger text-black border-danger' 
-                        : btn.id === 'roads' ? 'bg-warning text-black border-warning' 
+                        : btn.id === 'roads' ? 'bg-warning text-black border-warning'
+                        : btn.id === 'checkin' ? 'bg-safety text-black border-safety'
                         : 'bg-white text-black border-white'
                       : theme === 'dark' ? 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10' : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200'
                   }`}
@@ -1060,6 +1119,45 @@ const BottomSheet = ({
                 </motion.div>
               ))}
             </div>
+
+            {/* Community Check-in Board */}
+            {feedFilter === 'checkin' && (
+              <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-1" style={{ scrollbarWidth: 'thin' }}>
+                <div className={`p-4 rounded-2xl border ${theme === 'dark' ? 'bg-safety/5 border-safety/20' : 'bg-emerald-50 border-emerald-100'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <ShieldCheck className="w-4 h-4 text-safety" />
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-safety">Community Check-in Board</h4>
+                  </div>
+                  <p className="text-[9px] text-zinc-500">Showing users who marked themselves safe. Only district shown for privacy.</p>
+                </div>
+                {(safeCheckIns || []).length === 0 && (
+                  <div className={`p-6 rounded-2xl text-center ${theme === 'dark' ? 'bg-white/5' : 'bg-zinc-50'}`}>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">No check-ins yet</p>
+                  </div>
+                )}
+                {(safeCheckIns || []).sort((a: any, b: any) => b.createdAt - a.createdAt).map((ci: any) => (
+                  <motion.div
+                    key={ci.id} layout initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
+                    className={`p-4 rounded-2xl border ${theme === 'dark' ? 'bg-white/5 border-safety/10' : 'bg-zinc-50 border-emerald-100'}`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-safety/20 flex items-center justify-center">
+                          <ShieldCheck className="w-4 h-4 text-safety" />
+                        </div>
+                        <div>
+                          <p className={`text-xs font-bold ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+                            {ci.userId} <span className="text-safety">is SAFE</span>
+                          </p>
+                          <p className="text-[9px] text-zinc-500">{getDistrictName(ci.districtId)} District</p>
+                        </div>
+                      </div>
+                      <span className="text-[8px] font-mono text-zinc-500">{timeAgo(ci.createdAt, '')}</span>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1069,7 +1167,7 @@ const BottomSheet = ({
 
 // --- Main App ---
 export default function App() {
-  const { districts, alerts, services, addAlert, updateAlert, locations } = useSafetyData();
+  const { districts, alerts, services, safeCheckIns, addAlert, updateAlert, addSafeCheckIn, locations } = useSafetyData();
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('guardian-lang') as Language) || 'en');
   
   const genAI = useMemo(() => process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null, []);
@@ -1334,6 +1432,8 @@ export default function App() {
 
   const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
   const [jitsiRoomId, setJitsiRoomId] = useState('');
+  const [userSafeDistrict, setUserSafeDistrict] = useState<string | null>(null);
+  const [userSafeLocation, setUserSafeLocation] = useState<[number, number] | null>(null);
 
   const handleStartVideoCall = useCallback(() => {
     const roomId = `Guardian-LB-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -1346,6 +1446,38 @@ export default function App() {
     const message = encodeURIComponent(`${t.emergencyVideoCall}: ${url}`);
     window.open(`https://wa.me/?text=${message}`, '_blank');
   }, [jitsiRoomId, t.emergencyVideoCall]);
+
+  // --- I AM SAFE Check-in Handler ---
+  const handleSafeCheckIn = useCallback(() => {
+    // Attempt geolocation to determine district, fallback to 'beirut'
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setUserSafeLocation([latitude, longitude]);
+          // Find nearest district by simple distance
+          let nearestDist = districts[0];
+          let minDist = Infinity;
+          districts.forEach((d: any) => {
+            const center = d.bounds[0];
+            const dist = Math.sqrt(Math.pow(center[0] - latitude, 2) + Math.pow(center[1] - longitude, 2));
+            if (dist < minDist) { minDist = dist; nearestDist = d; }
+          });
+          setUserSafeDistrict(nearestDist.id);
+          addSafeCheckIn(nearestDist.id);
+        },
+        () => {
+          // Geolocation denied — default to Beirut
+          setUserSafeDistrict('beirut');
+          addSafeCheckIn('beirut');
+        },
+        { timeout: 5000, maximumAge: 60000 }
+      );
+    } else {
+      setUserSafeDistrict('beirut');
+      addSafeCheckIn('beirut');
+    }
+  }, [districts, addSafeCheckIn]);
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -1695,6 +1827,8 @@ export default function App() {
             searchLocation={searchLocation}
             hospitalData={hospitalData}
             updateAlert={updateAlert}
+            safeCheckIns={safeCheckIns}
+            districts={districts}
           />
           
           {isReportingMode && (
@@ -1731,6 +1865,9 @@ export default function App() {
             setFocusedAlertId={setFocusedAlertId} setIsReportModalOpen={setIsReportModalOpen}
             setIsVideoCallOpen={setIsVideoCallOpen}
             setIsSOSModalOpen={setIsSOSModalOpen}
+            safeCheckIns={safeCheckIns}
+            onSafeCheckIn={handleSafeCheckIn}
+            userSafeDistrict={userSafeDistrict}
           />
         </div>
       </main>

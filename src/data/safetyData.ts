@@ -32,6 +32,14 @@ export interface EssentialService {
   hours?: string;
 }
 
+// Ultra-lightweight check-in payload — privacy: district only, no exact coords
+export interface SafeCheckIn {
+  id: string;
+  userId: string;
+  districtId: string;
+  createdAt: number;
+}
+
 export const districts: District[] = [
   { id: 'beirut', name: { en: 'Beirut', ar: 'بيروت', fr: 'Beyrouth' }, risk: 'moderate', bounds: [[33.88, 35.47], [33.91, 35.53]] },
   { id: 'dahieh', name: { en: 'Dahieh', ar: 'الضاحية', fr: 'Dahieh' }, risk: 'critical', bounds: [[33.83, 35.48], [33.87, 35.52]] },
@@ -113,7 +121,9 @@ export const lebanonLocations = [
 ];
 
 const FEED_STORAGE_KEY = 'guardian-feed-history';
+const CHECKIN_STORAGE_KEY = 'guardian-safe-checkins';
 const MAX_FEED_ENTRIES = 100;
+const MAX_CHECKINS = 50;
 
 function persistFeed(alerts: Alert[]) {
   try {
@@ -129,12 +139,42 @@ function loadPersistedFeed(): Alert[] | null {
   return null;
 }
 
+function persistCheckIns(checkIns: SafeCheckIn[]) {
+  try {
+    localStorage.setItem(CHECKIN_STORAGE_KEY, JSON.stringify(checkIns.slice(0, MAX_CHECKINS)));
+  } catch { /* silent */ }
+}
+
+function loadPersistedCheckIns(): SafeCheckIn[] | null {
+  try {
+    const raw = localStorage.getItem(CHECKIN_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as SafeCheckIn[];
+  } catch { /* corrupted cache */ }
+  return null;
+}
+
+// Seed: simulated community check-ins
+const seedCheckIns: SafeCheckIn[] = [
+  { id: 'sc1', userId: 'User336', districtId: 'beirut', createdAt: Date.now() - 120000 },
+  { id: 'sc2', userId: 'User891', districtId: 'tyre', createdAt: Date.now() - 300000 },
+  { id: 'sc3', userId: 'User214', districtId: 'jounieh', createdAt: Date.now() - 600000 },
+  { id: 'sc4', userId: 'User507', districtId: 'tripoli', createdAt: Date.now() - 900000 },
+  { id: 'sc5', userId: 'User742', districtId: 'saida', createdAt: Date.now() - 1500000 },
+  { id: 'sc6', userId: 'User183', districtId: 'nabatieh', createdAt: Date.now() - 1800000 },
+  { id: 'sc7', userId: 'User629', districtId: 'baalbek', createdAt: Date.now() - 2400000 },
+  { id: 'sc8', userId: 'User055', districtId: 'dahieh', createdAt: Date.now() - 3000000 },
+];
+
 export function useSafetyData() {
   const [alerts, setAlerts] = useState<Alert[]>(() => {
     const persisted = loadPersistedFeed();
     return persisted && persisted.length > 0 ? persisted : initialAlerts;
   });
   const [services, setServices] = useState<EssentialService[]>(essentialServices);
+  const [safeCheckIns, setSafeCheckIns] = useState<SafeCheckIn[]>(() => {
+    const persisted = loadPersistedCheckIns();
+    return persisted && persisted.length > 0 ? persisted : seedCheckIns;
+  });
 
   // Simulate live updates
   useEffect(() => {
@@ -168,12 +208,29 @@ export function useSafetyData() {
     });
   }, []);
 
+  const addSafeCheckIn = useCallback((districtId: string) => {
+    const checkIn: SafeCheckIn = {
+      id: Math.random().toString(36).substr(2, 9),
+      userId: `User${Math.floor(100 + Math.random() * 900)}`,
+      districtId,
+      createdAt: Date.now(),
+    };
+    setSafeCheckIns(prev => {
+      const updated = [checkIn, ...prev].slice(0, MAX_CHECKINS);
+      persistCheckIns(updated);
+      return updated;
+    });
+    return checkIn;
+  }, []);
+
   return {
     districts,
     alerts,
     services,
+    safeCheckIns,
     addAlert,
     updateAlert,
+    addSafeCheckIn,
     locations: lebanonLocations
   };
 }
