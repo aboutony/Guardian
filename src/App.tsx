@@ -12,17 +12,19 @@ import {
 } from './constants';
 import { useSafetyData, type Alert, type EssentialService } from './data/safetyData';
 
-// ─── Leaflet Icon Factories ─────────────────────────────────────────────────
-const makeIcon = (emoji: string, size = 28) => L.divIcon({
-  html: `<span style="font-size:${size}px;line-height:1">${emoji}</span>`,
-  className: 'marker-animate', iconSize: [size, size], iconAnchor: [size / 2, size],
+// ─── Leaflet Icon Factories (colored circle backgrounds for visibility) ──────
+const makeIcon = (emoji: string, bg: string, size = 36) => L.divIcon({
+  html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.3)"><span style="font-size:${Math.round(size * 0.5)}px;line-height:1">${emoji}</span></div>`,
+  className: 'marker-animate', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
 });
 const ICONS: Record<string, L.DivIcon> = {
-  danger: makeIcon('🔴', 22), warning: makeIcon('🟡', 20), airstrike: makeIcon('💥', 26),
-  road_closure: makeIcon('🚧', 24), hospital: makeIcon('🏥', 26), bakery: makeIcon('🍞', 24),
-  pharmacy: makeIcon('💊', 24), fuel: makeIcon('⛽', 24), ngo: makeIcon('🤝', 24),
-  tools: makeIcon('🔧', 22), food_water: makeIcon('🍲', 24), user: makeIcon('📍', 28),
-  info: makeIcon('ℹ️', 20),
+  danger: makeIcon('💥', '#dc2626'), warning: makeIcon('⚠️', '#d97706'),
+  airstrike: makeIcon('💥', '#dc2626', 40), road_closure: makeIcon('🚧', '#ea580c'),
+  hospital: makeIcon('🏥', '#2563eb'), bakery: makeIcon('🍞', '#a16207'),
+  pharmacy: makeIcon('💊', '#7c3aed'), fuel: makeIcon('⛽', '#059669'),
+  ngo: makeIcon('🤝', '#0891b2'), tools: makeIcon('🔧', '#6b7280'),
+  food_water: makeIcon('🍲', '#16a34a'), user: makeIcon('📍', '#3b82f6', 40),
+  info: makeIcon('ℹ️', '#6b7280', 30),
 };
 
 // ─── MapController — flies to coords on change (skips initial mount) ─────────
@@ -143,10 +145,31 @@ export default function App() {
 
   const filteredServices = useMemo(() => {
     if (activeFilter === 'all') return services;
-    const map: Record<string, string> = { hospitals: 'hospital', bakeries: 'bakery', pharmacies: 'pharmacy', fuel: 'fuel', ngo: 'ngo' };
-    const svcType = map[activeFilter];
+    const svcMap: Record<string, string> = { hospitals: 'hospital', bakeries: 'bakery', pharmacies: 'pharmacy', fuel: 'fuel', ngo: 'ngo' };
+    const svcType = svcMap[activeFilter];
     return svcType ? services.filter(s => s.type === svcType) : [];
   }, [services, activeFilter]);
+
+  // ── Auto-zoom to filtered markers when filter changes ─────────────────────
+  useEffect(() => {
+    if (activeFilter === 'all') {
+      setMapCenter(LEBANON_CENTER);
+      setMapZoom(DEFAULT_ZOOM);
+      return;
+    }
+    // Collect all visible marker coords
+    const coords: [number, number][] = [
+      ...filteredAlerts.map(a => a.coordinates),
+      ...filteredServices.map(s => s.coordinates),
+      ...(activeFilter === 'hospitals' ? HOSPITAL_FALLBACK.map(h => h.coordinates) : []),
+    ];
+    if (coords.length > 0) {
+      const avgLat = coords.reduce((s, c) => s + c[0], 0) / coords.length;
+      const avgLng = coords.reduce((s, c) => s + c[1], 0) / coords.length;
+      setMapCenter([avgLat, avgLng]);
+      setMapZoom(coords.length === 1 ? 13 : 10);
+    }
+  }, [activeFilter, filteredAlerts, filteredServices]);
 
   // ── Search results ─────────────────────────────────────────────────────────
   const searchResults = useMemo(() => {
@@ -339,13 +362,15 @@ export default function App() {
           </div>
         </div>
         {/* Filter chips */}
-        <div className="flex gap-1.5 px-3 pb-2 overflow-x-auto no-scrollbar">
+        <div className="flex gap-1.5 px-3 pb-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {FILTER_CATEGORIES.map(f => (
             <button key={f.id} onClick={() => setActiveFilter(f.id)}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all ${
-                activeFilter === f.id ? 'bg-red-500 text-white' : `${isDark ? 'bg-white/10 text-white/70' : 'bg-gray-200 text-gray-600'}`
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+                activeFilter === f.id
+                  ? 'bg-red-500 text-white ring-2 ring-red-400 ring-offset-1 ring-offset-black shadow-[0_0_12px_rgba(239,68,68,0.5)]'
+                  : `${isDark ? 'bg-white/10 text-white/70 hover:bg-white/20' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`
               }`}>
-              <span>{f.icon}</span> {f[lang]}
+              <span className="text-sm">{f.icon}</span> {f[lang]}
             </button>
           ))}
         </div>
