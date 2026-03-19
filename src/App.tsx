@@ -1,2130 +1,590 @@
-import 'leaflet/dist/leaflet.css';
-import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
-import { 
-  Phone,
-  MessageSquare,
-  LifeBuoy,
-  ShieldAlert, 
-  Search, 
-  Navigation, 
-  AlertTriangle, 
-  Menu, 
-  X, 
-  Zap, 
-  Hospital, 
-  Home, 
-  Fuel, 
-  Utensils, 
-  Shield, 
-  Activity, 
-  MapPin, 
-  WifiOff, 
-  Sun, 
-  Moon, 
-  Settings as SettingsIcon, 
-  Pill, 
-  Wrench,
-  Share2,
-  BatteryLow,
-  CheckCircle2,
-  QrCode,
-  Info,
-  ShieldCheck,
-  HandHeart,
-  Flame,
-  Package,
-  Construction,
-  Fence,
-  Waves,
-  Video,
-  PhoneOutgoing,
-  ChevronRight,
-  CloudOff
-} from 'lucide-react';
-import { GoogleGenAI, Type } from "@google/genai";
-import { QRCodeCanvas } from 'qrcode.react';
-import { motion, AnimatePresence, useAnimation } from 'motion/react';
-import { JitsiMeeting } from '@jitsi/react-sdk';
-import { 
-  MapContainer, 
-  TileLayer, 
-  Marker, 
-  Popup, 
-  Polyline, 
-  useMap,
-  useMapEvents,
-  Circle
-} from 'react-leaflet';
+// App.tsx — Guardian Lebanon — Modular Recovery Build
+// All static data imported from ./constants | Hook/data from ./data/safetyData
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import 'leaflet.markercluster/dist/MarkerCluster.css';
-import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
-import MarkerClusterGroup from 'react-leaflet-cluster';
+import { QRCodeSVG } from 'qrcode.react';
+import {
+  TRANSLATIONS, DANGER_TYPES, DISTRICT_COORDINATES, LEBANON_CENTER, DEFAULT_ZOOM,
+  SAFETY_BUFFER_METERS, OSRM_BASE_URL, FILTER_CATEGORIES, SERVICE_ICONS,
+  HOSPITAL_FALLBACK, EMERGENCY_CONTACTS,
+  type Language, type Theme
+} from './constants';
+import { useSafetyData, type Alert, type EssentialService } from './data/safetyData';
 
-// Centralized Data Hook
-import { useSafetyData, Alert, District, EssentialService, SafeCheckIn } from './data/safetyData';
-
-// Types
-type Language = 'en' | 'ar' | 'fr';
-type Theme = 'dark' | 'light';
-
-const LanguageContext = React.createContext<{
-  language: Language;
-  setLanguage: (lang: Language) => void;
-  t: any;
-  isRTL: boolean;
-} | null>(null);
-
-const useLanguage = () => {
-  const context = React.useContext(LanguageContext);
-  if (!context) throw new Error('useLanguage must be used within LanguageProvider');
-  return context;
+// ─── Leaflet Icon Factories ─────────────────────────────────────────────────
+const makeIcon = (emoji: string, size = 28) => L.divIcon({
+  html: `<span style="font-size:${size}px;line-height:1">${emoji}</span>`,
+  className: 'marker-animate', iconSize: [size, size], iconAnchor: [size / 2, size],
+});
+const ICONS: Record<string, L.DivIcon> = {
+  danger: makeIcon('🔴', 22), warning: makeIcon('🟡', 20), airstrike: makeIcon('💥', 26),
+  road_closure: makeIcon('🚧', 24), hospital: makeIcon('🏥', 26), bakery: makeIcon('🍞', 24),
+  pharmacy: makeIcon('💊', 24), fuel: makeIcon('⛽', 24), ngo: makeIcon('🤝', 24),
+  tools: makeIcon('🔧', 22), food_water: makeIcon('🍲', 24), user: makeIcon('📍', 28),
+  info: makeIcon('ℹ️', 20),
 };
 
-const TRANSLATIONS: Record<Language, any> = {
-  en: {
-    name: "Guardian",
-    safetyStatus: "Safety Status",
-    findSafestPath: "Find Safest Path",
-    reportDanger: "Report Danger",
-    emergency: "EMERGENCY",
-    searchPlaceholder: "Search village, city or address...",
-    offlineReady: "Offline Ready",
-    liveSafetyFeed: "Live Safety Feed",
-    lowBandwidth: "Low Bandwidth Mode",
-    optimized3G: "Optimized for 3G networks",
-    startPoint: "Start Point",
-    destination: "Destination",
-    selectDistrict: "Select District",
-    report: "REPORT",
-    routing: "ROUTING...",
-    safePathFound: "Safe Path Found",
-    estimatedTime: "Estimated travel time",
-    minutes: "min",
-    dangerAvoided: "Danger zones avoided",
-    lowBandwidthActive: "Low Bandwidth — Tiles Disabled",
-    submitReport: "SUBMIT REPORT",
-    dangerType: "Select Danger Type",
-    details: "Additional Details (Optional)",
-    describe: "Describe the situation...",
-    noResults: "No results found",
-    verified: "Verified",
-    nnaVerified: "✓ Verified (NNA)",
-    communityReport: "⚠️ Community Report",
-    foodWater: "Food/Water Distribution",
-    safeCorridor: "Safe Corridor",
-    lowPower: "Low Power Mode",
-    lowPowerDesc: "Disables map animations to save battery",
-    share: "Share Safe Route",
-    shareApp: "Share Guardian App",
-    shareSuccess: "Link copied to clipboard!",
-    welcomeTitle: "Welcome to Guardian",
-    welcomeMessage: "Our priority is 'Security over Speed'. We calculate routes based on real-time safety data, not just the shortest distance. Stay safe.",
-    settings: "Settings",
-    language: "Language",
-    theme: "Appearance",
-    allResources: "All Resources",
-    airstrikes: "Airstrikes",
-    hospitals: "Hospitals",
-    bakeries: "Bakeries",
-    pharmacies: "Pharmacies",
-    fuel: "Fuel Stations",
-    tools: "Tools",
-    ngo: "NGOs/Aid",
-    requestAid: "Request Humanitarian Aid",
-    aidType: "Aid Type",
-    food: "Food",
-    medical: "Medical",
-    shelter: "Shelter",
-    multi: "Multi-Aid",
-    hours: "Operational Hours",
-    close: "Close",
-    understand: "I Understand",
-    scanQR: "Scan this code to open Guardian on another device",
-    showQR: "Show QR",
-    offlineShare: "Share with others offline",
-    dangerZone: "DANGER ZONE",
-    dangerLevel: "Danger Level",
-    airstrike: "Airstrike/Shelling",
-    emergencyContacts: "EMERGENCY CONTACTS",
-    lrc: "Red Cross",
-    civilDefense: "Civil Defense",
-    shareLocation: "Share My Location",
-    whatsappMessage: "Emergency! My current location is: ",
-    verified_ago: "Verified {time} ago",
-    reported_ago: "Reported {time} ago",
-    userVerified: "Community Verified",
-    operational: "Operational",
-    limited: "Limited Service",
-    closed: "Closed",
-    lrcEmergency: "LRC Emergency: 140",
-    iAmSafe: "I am Safe",
-    iAmSafeMessage: "I am safe! My current location is: ",
-    roadStatus: "Road Status",
-    roadClosure: "Road Closure",
-    verifiedISF: "✓ Verified (ISF)",
-    communityAlert: "⚠️ Community Alert",
-    stillClosed: "Still Closed",
-    roadNowOpen: "Road is Open",
-    verifiedBy: "Verified by {count} users",
-    communityVote: "Community Vote",
-    earthquakes: "Earthquakes",
-    seismicAlert: "SEISMIC ALERT",
-    seismicInstructions: "Drop, Cover, and Hold On",
-    magnitude: "Magnitude",
-    richter: "Richter",
-    workingOffline: "Working Offline",
-    survivalGuide: "Survival Guide",
-    earthquakeSafety: "Earthquake Safety",
-    gasLeakSafety: "Gas Leak Safety",
-    gasLeakInstructions: "If you smell gas: Open windows, do not use switches, leave immediately.",
-    safetyDisclaimerTitle: "Safety Disclaimer",
-    safetyDisclaimerMessage: "This app provides safety data for informational purposes only. Always prioritize local authorities' instructions. Stay safe.",
-    videoCall: "Video Call",
-    shareCallLink: "Share Call Link",
-    hangUp: "Hang Up",
-    emergencyVideoCall: "Emergency Video Call",
-    districts: {
-      dahieh: "Dahieh",
-      beirut: "Beirut",
-      tyre: "Tyre",
-      nabatieh: "Nabatieh",
-      tripoli: "Tripoli",
-      saida: "Saida",
-      baalbek: "Baalbek",
-      jounieh: "Jounieh"
-    }
-  },
-  ar: {
-    name: "الحارس",
-    safetyStatus: "حالة الأمان",
-    reportDanger: "بلغ عن خطر",
-    emergency: "طوارئ",
-    searchPlaceholder: "ابحث عن قرية، مدينة أو عنوان...",
-    offlineReady: "جاهز للعمل دون اتصال",
-    liveSafetyFeed: "بلاغات الأمان المباشرة",
-    lowBandwidth: "وضع النطاق الترددي المنخفض",
-    optimized3G: "محسن لشبكات 3G",
-    startPoint: "نقطة البداية",
-    destination: "الوجهة",
-    selectDistrict: "اختر المنطقة",
-    report: "تبليغ",
-    routing: "جاري التوجيه...",
-    safePathFound: "تم العثور على مسار آمن",
-    estimatedTime: "الوقت المقدر",
-    minutes: "دقيقة",
-    dangerAvoided: "تم تجنب مناطق الخطر",
-    lowBandwidthActive: "نطاق منخفض — الخرائط معطلة",
-    submitReport: "إرسال التقرير",
-    dangerType: "اختر نوع الخطر",
-    details: "تفاصيل إضافية (اختياري)",
-    describe: "صف الموقف...",
-    noResults: "لم يتم العثور على نتائج",
-    verified: "تم التحقق",
-    nnaVerified: "موثوق (NNA) ✓",
-    communityReport: "بلاغ مجتمعي ⚠️",
-    foodWater: "توزيع طعام/ماء",
-    safeCorridor: "ممر آمن",
-    lowPower: "وضع توفير الطاقة",
-    lowPowerDesc: "يعطل الرسوم المتحركة لتوفير البطارية",
-    share: "مشاركة الطريق الآمن",
-    shareApp: "مشاركة تطبيق الحارس",
-    shareSuccess: "تم نسخ الرابط!",
-    welcomeTitle: "مرحباً بك في الحارس",
-    welcomeMessage: "أولويتنا هي 'الأمان قبل السرعة'. نقوم بحساب الطرق بناءً على بيانات الأمان في الوقت الفعلي، وليس فقط المسافة الأقصر. ابقَ آمناً.",
-    settings: "الإعدادات",
-    language: "اللغة",
-    theme: "المظهر",
-    allResources: "جميع الموارد",
-    airstrikes: "غارات جوية",
-    hospitals: "مشافي",
-    bakeries: "أفران",
-    pharmacies: "صيدليات",
-    fuel: "محطات وقود",
-    tools: "أدوات",
-    ngo: "منظمات",
-    requestAid: "طلب مساعدات إنسانية",
-    aidType: "نوع المساعدة",
-    food: "طعام",
-    medical: "طبي",
-    shelter: "مأوى",
-    multi: "مساعدات متعددة",
-    hours: "ساعات العمل",
-    close: "إغلاق",
-    understand: "أفهم ذلك",
-    scanQR: "امسح هذا الرمز لفتح الحارس على جهاز آخر",
-    showQR: "عرض الرمز",
-    offlineShare: "مشاركة مع الآخرين دون اتصال",
-    dangerZone: "منطقة خطر",
-    dangerLevel: "مستوى الخطر",
-    airstrike: "غارة جوية / قصف",
-    emergencyContacts: "جهات اتصال الطوارئ",
-    lrc: "الصليب الأحمر",
-    civilDefense: "الدفاع المدني",
-    shareLocation: "مشاركة موقعي",
-    whatsappMessage: "طوارئ! موقعي الحالي هو: ",
-    verified_ago: "تم التحقق منذ {time}",
-    reported_ago: "تم التبليغ منذ {time}",
-    userVerified: "تم التحقق من المجتمع",
-    operational: "قيد الخدمة",
-    limited: "خدمة محدودة",
-    closed: "مغلق",
-    lrcEmergency: "طوارئ الصليب الأحمر: ١٤٠",
-    iAmSafe: "أنا بخير",
-    iAmSafeMessage: "أنا بخير! موقعي الحالي هو: ",
-    findSafestPath: "البحث عن المسار الأكثر أماناً",
-    roadStatus: "حالة الطرق",
-    roadClosure: "إغلاق طريق",
-    verifiedISF: "موثوق (ISF) ✓",
-    communityAlert: "بلاغ مجتمعي ⚠️",
-    stillClosed: "لا يزال مغلقاً",
-    roadNowOpen: "الطريق مفتوح",
-    verifiedBy: "تم التحقق من {count} مستخدم",
-    communityVote: "تصويت المجتمع",
-    earthquakes: "هزات أرضية",
-    seismicAlert: "تنبيه زلزالي",
-    seismicInstructions: "انخفض، تغطَّ، وتمسك",
-    magnitude: "القوة",
-    richter: "ريختر",
-    workingOffline: "نظام عدم الاتصال",
-    survivalGuide: "دليل النجاة",
-    earthquakeSafety: "السلامة من الزلازل",
-    gasLeakSafety: "السلامة من تسرب الغاز",
-    gasLeakInstructions: "إذا شممت رائحة غاز: افتح النوافذ، لا تستخدم المفاتيح الكهربائية، وغادر فوراً.",
-    safetyDisclaimerTitle: "إخلاء مسؤولية الأمان",
-    safetyDisclaimerMessage: "يوفر هذا التطبيق بيانات الأمان لأغراض إعلامية فقط. أعطِ الأولوية دائماً لتعليمات السلطات المحلية. ابقَ آمناً.",
-    videoCall: "اتصال فيديو",
-    shareCallLink: "مشاركة رابط المكالمة",
-    hangUp: "إنهاء المكالمة",
-    emergencyVideoCall: "اتصال فيديو الطوارئ",
-    districts: {
-      dahieh: "الضاحية",
-      beirut: "بيروت",
-      tyre: "صور",
-      nabatieh: "النبطية",
-      tripoli: "طرابلس",
-      saida: "صيدا",
-      baalbek: "بعلبك",
-      jounieh: "جونية"
-    }
-  },
-  fr: {
-    name: "Le Gardien",
-    safetyStatus: "État de Sécurité",
-    findSafestPath: "Trouver le chemin le plus sûr",
-    reportDanger: "Signaler un danger",
-    emergency: "Urgences",
-    searchPlaceholder: "Chercher un village, ville...",
-    offlineReady: "Prêt Hors Ligne",
-    liveSafetyFeed: "Signalements en Direct",
-    lowBandwidth: "Mode Basse Bande",
-    optimized3G: "Optimisé pour la 3G",
-    startPoint: "Point de Départ",
-    destination: "Destination",
-    selectDistrict: "Sélectionner District",
-    report: "SIGNALER",
-    routing: "CALCUL...",
-    safePathFound: "Chemin Sûr Trouvé",
-    estimatedTime: "Temps de trajet estimé",
-    minutes: "min",
-    dangerAvoided: "Zones dangereuses évitées",
-    lowBandwidthActive: "Basse Bande — Tuiles Désactivées",
-    submitReport: "ENVOYER LE RAPPORT",
-    dangerType: "Type de Danger",
-    details: "Détails (Optionnel)",
-    describe: "Décrivez la situation...",
-    noResults: "Aucun résultat",
-    verified: "Vérifié",
-    nnaVerified: "✓ Vérifié (NNA)",
-    communityReport: "⚠️ Signalement Communautaire",
-    foodWater: "Distribution Eau/Nourriture",
-    safeCorridor: "Corridor Sûr",
-    lowPower: "Mode Économie",
-    lowPowerDesc: "Désactive les animations pour économiser la batterie",
-    share: "Partager l'itinéraire",
-    shareApp: "Partager l'application",
-    shareSuccess: "Lien copié!",
-    welcomeTitle: "Bienvenue sur Le Gardien",
-    welcomeMessage: "Notre priorité est 'La Sécurité avant la Vitesse'. Nous calculons les itinéraires basés sur la sécurité en temps réel, pas seulement la distance. Restez en sécurité.",
-    settings: "Paramètres",
-    language: "Langue",
-    theme: "Apparence",
-    allResources: "Toutes les ressources",
-    airstrikes: "Frappes Aériennes",
-    hospitals: "Hôpitaux",
-    bakeries: "Boulangeries",
-    pharmacies: "Pharmacies",
-    fuel: "Stations-service",
-    tools: "Outils",
-    ngo: "ONG",
-    requestAid: "Demander de l'aide humanitaire",
-    aidType: "Type d'aide",
-    food: "Nourriture",
-    medical: "Médical",
-    shelter: "Abri",
-    multi: "Aide multiple",
-    hours: "Heures d'ouverture",
-    close: "Fermer",
-    understand: "Je comprends",
-    scanQR: "Scannez ce code pour ouvrir Le Gardien sur un autre appareil",
-    showQR: "Afficher le QR",
-    offlineShare: "Partager hors ligne",
-    dangerZone: "ZONE DE DANGER",
-    dangerLevel: "Niveau de Danger",
-    airstrike: "Frappe Aérienne / Bombardement",
-    emergencyContacts: "CONTACTS D'URGENCE",
-    lrc: "Croix-Rouge",
-    civilDefense: "Défense Civile",
-    shareLocation: "Partager ma position",
-    whatsappMessage: "Urgence ! Ma position actuelle est : ",
-    verified_ago: "Vérifié il y a {time}",
-    reported_ago: "Signalé il y a {time}",
-    userVerified: "Vérifié par la Communauté",
-    operational: "Opérationnel",
-    limited: "Service Limité",
-    closed: "Fermé",
-    lrcEmergency: "Urgence Croix-Rouge: 140",
-    iAmSafe: "Je suis en sécurité",
-    iAmSafeMessage: "Je suis en sécurité ! Ma position actuelle est : ",
-    roadStatus: "État des Routes",
-    roadClosure: "Route Fermée",
-    verifiedISF: "✓ Vérifié (ISF)",
-    communityAlert: "⚠️ Alerte Communautaire",
-    stillClosed: "Toujours Fermée",
-    roadNowOpen: "Route Ouverte",
-    verifiedBy: "Vérifié par {count} utilisateurs",
-    communityVote: "Vote Communautaire",
-    earthquakes: "Séismes",
-    seismicAlert: "ALERTE SISMIQUE",
-    seismicInstructions: "Baissez-vous, abritez-vous et agrippez-vous",
-    magnitude: "Magnitude",
-    richter: "Richter",
-    workingOffline: "Mode Hors-ligne",
-    survivalGuide: "Guide de Survie",
-    earthquakeSafety: "Sécurité Séisme",
-    gasLeakSafety: "Sécurité Fuite de Gaz",
-    gasLeakInstructions: "Si vous sentez du gaz : ouvrez les fenêtres, n'utilisez pas d'interrupteurs, partez immédiatement.",
-    safetyDisclaimerTitle: "Avis de sécurité",
-    safetyDisclaimerMessage: "Cette application fournit des données de sécurité à titre informatif uniquement. Priorisez toujours les instructions des autorités locales. Restez en sécurité.",
-    videoCall: "Appel Vidéo",
-    shareCallLink: "Partager le lien",
-    hangUp: "Raccrocher",
-    emergencyVideoCall: "Appel Vidéo d'Urgence",
-    districts: {
-      dahieh: "Dahieh",
-      beirut: "Beyrouth",
-      tyre: "Tyr",
-      nabatieh: "Nabatieh",
-      tripoli: "Tripoli",
-      saida: "Saïda",
-      baalbek: "Baalbek",
-      jounieh: "Jounieh"
-    }
-  }
-};
-
-const DANGER_TYPES: Record<Language, string[]> = {
-  en: ["Airstrike/Shelling", "Road Block", "Gunfire", "Checkpoint", "Resource Update", "Request Humanitarian Aid"],
-  ar: ["غارة جوية / قصف", "قطع طريق", "إطلاق نار", "حاجز أمني", "تحديث الموارد", "طلب مساعدات إنسانية"],
-  fr: ["Frappe Aérienne / Bombardement", "Barrage Routier", "Fusillade", "Point de Contrôle", "Mise à jour des ressources", "Demande d'aide humanitaire"]
-};
-
-// --- Static Utilities & Icons ---
-const createCustomIcon = (emoji: string, color: string) => L.divIcon({
-  html: `<div style="background-color: ${color}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 18px;">${emoji}</div>`,
-  className: 'custom-div-icon',
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-});
-
-const dangerIcon = L.divIcon({
-  html: `<div style="background-color: #FF3B30; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(255,59,48,0.5);"></div>`,
-  className: 'danger-icon',
-  iconSize: [20, 20],
-  iconAnchor: [10, 10],
-});
-
-const warningIcon = L.divIcon({
-  html: `<div style="background-color: #FF9500; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 8px rgba(255,149,0,0.4);"></div>`,
-  className: 'warning-icon',
-  iconSize: [16, 16],
-  iconAnchor: [8, 8],
-});
-
-const infoIcon = L.divIcon({
-  html: `<div style="background-color: #007AFF; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 8px rgba(0,122,255,0.4);"></div>`,
-  className: 'info-icon',
-  iconSize: [16, 16],
-  iconAnchor: [8, 8],
-});
-
-const hospitalCrossIcon = L.divIcon({
-  html: `<div style="background-color: #007AFF; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 8px rgba(0,122,255,0.5); font-size: 18px; color: white; font-weight: bold;">✚</div>`,
-  className: 'hospital-cross-icon',
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-});
-
-const safeCheckInIcon = L.divIcon({
-  html: `<div style="background-color: #34C759; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 8px rgba(52,199,89,0.5); font-size: 14px; color: white; font-weight: bold;">✓</div>`,
-  className: 'safe-checkin-icon',
-  iconSize: [28, 28],
-  iconAnchor: [14, 14],
-});
-
-// --- Map Components ---
-const MapResizeHandler = () => {
+// ─── MapController — flies to coords on change ──────────────────────────────
+function MapController({ center, zoom }: { center: [number, number]; zoom: number }) {
   const map = useMap();
-  useEffect(() => {
-    const timer = setTimeout(() => map.invalidateSize(), 100);
-    return () => clearTimeout(timer);
-  }, [map]);
+  useEffect(() => { map.flyTo(center, zoom, { duration: 1 }); }, [center, zoom, map]);
   return null;
-};
-
-const MapBoundsHandler = ({ onBoundsChange }: { onBoundsChange: (bounds: L.LatLngBounds) => void }) => {
-  const map = useMapEvents({
-    moveend: () => onBoundsChange(map.getBounds()),
-    zoomend: () => onBoundsChange(map.getBounds()),
-  });
-  
-  // Initial bounds set
-  useEffect(() => {
-    onBoundsChange(map.getBounds());
-  }, []); // Only run once on mount
-
-  return null;
-};
-
-const MapClickHandler = ({ isReportingMode, onMapClick }: { isReportingMode: boolean, onMapClick: (lat: number, lng: number) => void }) => {
-  useMapEvents({
-    click: (e) => { if (isReportingMode) onMapClick(e.latlng.lat, e.latlng.lng); },
-  });
-  return null;
-};
-
-const MapUpdater = ({ focusedAlertId, alerts, searchLocation }: { focusedAlertId: string | null, alerts: Alert[], searchLocation: [number, number] | null }) => {
-  const map = useMap();
-  const lastFocusedId = useRef<string | null>(null);
-  const lastSearchLoc = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!map) return;
-    
-    if (focusedAlertId && focusedAlertId !== lastFocusedId.current) {
-      const alert = alerts.find(a => a.id === focusedAlertId);
-      if (alert) {
-        map.setView(alert.coordinates, 14);
-        lastFocusedId.current = focusedAlertId;
-      }
-    } else if (searchLocation) {
-      const locKey = `${searchLocation[0]},${searchLocation[1]}`;
-      if (locKey !== lastSearchLoc.current) {
-        map.setView(searchLocation, 12);
-        lastSearchLoc.current = locKey;
-      }
-    }
-    
-    if (!focusedAlertId) lastFocusedId.current = null;
-    if (!searchLocation) lastSearchLoc.current = null;
-  }, [map, focusedAlertId, alerts, searchLocation]);
-
-  return null;
-};
-
-const PulseCircle = ({ center, pulse, lowPowerMode, color = '#FF3B30', radius = 500 }: { center: [number, number], pulse: number, lowPowerMode: boolean, color?: string, radius?: number }) => {
-  if (lowPowerMode) return (
-    <Circle 
-      center={center} 
-      radius={radius} 
-      pathOptions={{ fillColor: color, fillOpacity: 0.3, strokeWeight: 1, color: color }} 
-    />
-  );
-  return (
-    <Circle
-      center={center}
-      radius={radius * pulse}
-      pathOptions={{
-        fillColor: color,
-        fillOpacity: 0.4 * (1.5 - pulse),
-        strokeWeight: 0
-      }}
-    />
-  );
-};
-
-interface MapComponentProps {
-  theme: Theme;
-  alerts: Alert[];
-  services: EssentialService[];
-  activeFilter: string | null;
-  routePath: [number, number][];
-  focusedAlertId: string | null;
-  setFocusedAlertId: (id: string | null) => void;
-  t: any;
-  onBoundsChange: (bounds: L.LatLngBounds) => void;
-  isReportingMode: boolean;
-  onMapClick: (lat: number, lng: number) => void;
-  lowPowerMode: boolean;
 }
 
-const ZoomControls = ({ isRTL }: { isRTL: boolean }) => {
-  const map = useMap();
-  return (
-    <div className={`leaflet-top ${isRTL ? 'leaflet-left' : 'leaflet-right'} mt-24 ${isRTL ? 'ml-4' : 'mr-4'} pointer-events-auto`}>
-      <div className="leaflet-control leaflet-bar border-none shadow-2xl flex flex-col">
-        <button 
-          onClick={(e) => { e.stopPropagation(); map.zoomIn(); }} 
-          className={`w-10 h-10 flex items-center justify-center bg-zinc-900 text-white border-b border-white/10 rounded-t-xl hover:bg-zinc-800 transition-colors`}
-        >
-          +
-        </button>
-        <button 
-          onClick={(e) => { e.stopPropagation(); map.zoomOut(); }} 
-          className={`w-10 h-10 flex items-center justify-center bg-zinc-900 text-white rounded-b-xl hover:bg-zinc-800 transition-colors`}
-        >
-          -
-        </button>
-      </div>
-    </div>
-  );
-};
+// ─── Haversine distance (meters) ─────────────────────────────────────────────
+function haversine(a: [number, number], b: [number, number]): number {
+  const R = 6371000, toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b[0] - a[0]), dLon = toRad(b[1] - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
 
-const MapComponent = React.memo(({ 
-  theme, alerts, services, earthquakes, activeFilter, routePath, focusedAlertId, setFocusedAlertId, onBoundsChange, isReportingMode, onMapClick, lowPowerMode, searchLocation, onZoom, hospitalData, updateAlert
-}: any) => {
-  const { t, language, isRTL } = useLanguage();
-  const [pulse, setPulse] = useState(1);
+// ─── Time-ago helper ─────────────────────────────────────────────────────────
+function timeAgo(ts: number): string {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPulse(p => p === 1 ? 1.2 : 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const MapEvents = () => {
-    useMapEvents({
-      // Removed onZoom to prevent rate limit exhaustion
-    });
-    return null;
-  };
-
-  useEffect(() => {
-    if (lowPowerMode) return;
-    const interval = setInterval(() => {
-      setPulse(p => p > 1.5 ? 1 : p + 0.05);
-    }, 50);
-    return () => clearInterval(interval);
-  }, [lowPowerMode]);
-
-  return (
-    <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${isReportingMode ? 'cursor-crosshair' : ''}`}>
-      <MapContainer center={[33.85, 35.50]} zoom={9} zoomControl={false} className="w-full h-full">
-        <MapResizeHandler />
-        <MapBoundsHandler onBoundsChange={onBoundsChange} />
-        <MapClickHandler isReportingMode={isReportingMode} onMapClick={onMapClick} />
-        <MapUpdater focusedAlertId={focusedAlertId} alerts={alerts} searchLocation={searchLocation} />
-        <MapEvents />
-        {!lowPowerMode && (
-          <TileLayer
-            url={theme === 'dark' 
-              ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?lang=${language}` 
-              : `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png?lang=${language}`}
-            attribution='&copy; OpenStreetMap contributors'
-          />
-        )}
-        
-        <ZoomControls isRTL={isRTL} />
-
-        {alerts.filter(a => {
-          if (!activeFilter || activeFilter === 'all') return true;
-          if (activeFilter === 'airstrike') return a.type === 'airstrike';
-          if (activeFilter === 'road_closure') return a.type === 'road_closure';
-          return false;
-        }).map(alert => (
-          <Fragment key={alert.id}>
-            {(alert.type === 'danger' || alert.type === 'airstrike') && (
-              <PulseCircle center={alert.coordinates} pulse={pulse} lowPowerMode={lowPowerMode} color={alert.type === 'airstrike' ? '#FF3B30' : '#FF3B30'} />
-            )}
-            <Marker
-              position={alert.coordinates}
-              icon={
-                alert.type === 'airstrike' ? createCustomIcon('🔥', '#FF3B30') : 
-                alert.type === 'road_closure' ? createCustomIcon('✖', '#FF9500') :
-                alert.type === 'danger' ? dangerIcon : 
-                alert.type === 'warning' ? warningIcon : infoIcon
-              }
-              eventHandlers={{ click: () => setFocusedAlertId(alert.id) }}
-            >
-              <Popup>
-                <div className="p-2 min-w-[220px]" dir={isRTL ? 'rtl' : 'ltr'}>
-                  <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${alert.type === 'airstrike' || alert.type === 'danger' || alert.type === 'road_closure' ? 'text-danger' : 'text-warning'}`}>
-                    {alert.type === 'airstrike' ? t.airstrikes : alert.type === 'road_closure' ? t.roadClosure : t.dangerZone}
-                  </p>
-                  <p className="font-bold text-sm mb-2">{alert.message}</p>
-
-                  {/* Verification Badge */}
-                  {(alert.verificationCount || 0) >= 3 && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px', padding: '4px 8px', borderRadius: '8px', backgroundColor: 'rgba(52,199,89,0.1)', border: '1px solid rgba(52,199,89,0.3)' }}>
-                      <span style={{ color: '#34C759', fontSize: '12px' }}>✓</span>
-                      <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#34C759' }}>
-                        {t.verifiedBy.replace('{count}', String(alert.verificationCount || 0))}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Road Closure Voting Buttons */}
-                  {alert.type === 'road_closure' && updateAlert && (
-                    <div style={{ marginBottom: '8px' }}>
-                      <p style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#999', marginBottom: '6px' }}>{t.communityVote}</p>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); updateAlert(alert.id, { verificationCount: (alert.verificationCount || 0) + 1, roadOpen: false }); }}
-                          style={{
-                            flex: 1, padding: '8px 6px', borderRadius: '10px', border: '1px solid rgba(255,149,0,0.4)',
-                            backgroundColor: !alert.roadOpen ? 'rgba(255,149,0,0.15)' : 'transparent',
-                            color: '#FF9500', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
-                          }}
-                        >
-                          ✖ {t.stillClosed}
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); updateAlert(alert.id, { roadOpen: true, verificationCount: (alert.verificationCount || 0) + 1 }); }}
-                          style={{
-                            flex: 1, padding: '8px 6px', borderRadius: '10px', border: '1px solid rgba(52,199,89,0.4)',
-                            backgroundColor: alert.roadOpen ? 'rgba(52,199,89,0.15)' : 'transparent',
-                            color: '#34C759', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
-                          }}
-                        >
-                          ✓ {t.roadNowOpen}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between border-t pt-2">
-                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${alert.isUserReported ? 'border-warning/50 text-warning bg-warning/5' : 'border-safety/50 text-safety bg-safety/5'}`}>
-                      {alert.type === 'road_closure' && !alert.isUserReported ? t.verifiedISF : alert.isUserReported ? t.communityAlert : t.nnaVerified}
-                    </span>
-                    <span className="text-[10px] font-mono font-bold">
-                      {alert.type === 'airstrike' ? t.reported_ago.replace('{time}', alert.timestamp) : t.verified_ago.replace('{time}', alert.timestamp)}
-                    </span>
-                  </div>
-                </div>
-              </Popup>
-            </Marker>
-          </Fragment>
-        ))}
-
-        {earthquakes.filter(() => !activeFilter || activeFilter === 'all' || activeFilter === 'earthquake').map((quake: any) => (
-          <Fragment key={quake.id}>
-            <PulseCircle 
-              center={quake.coordinates} 
-              pulse={pulse} 
-              lowPowerMode={lowPowerMode} 
-              color="#A855F7" 
-              radius={1500}
-            />
-            <Marker
-              position={quake.coordinates}
-              icon={createCustomIcon('🌋', quake.mag > 6.0 ? '#FF3B30' : quake.mag > 4.0 ? '#FF9500' : '#FFCC00')}
-            >
-              <Popup>
-                <div className="p-2 min-w-[200px]" dir={isRTL ? 'rtl' : 'ltr'}>
-                  <p className="text-[10px] font-black uppercase tracking-widest mb-1 text-purple-500">
-                    {t.earthquakes}
-                  </p>
-                  <p className="font-bold text-sm mb-1">{quake.place}</p>
-                  <div className={`flex items-center gap-2 mb-2 p-1.5 rounded-lg ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
-                    <div className={`w-2 h-2 rounded-full ${quake.mag > 6.0 ? 'bg-danger animate-pulse' : quake.mag > 4.0 ? 'bg-warning' : 'bg-yellow-400'}`} />
-                    <p className="text-[10px] font-black uppercase">
-                      {t.magnitude}: {quake.mag} {t.richter}
-                    </p>
-                  </div>
-                  <p className="text-[10px] font-mono font-bold text-zinc-500">{quake.time}</p>
-                </div>
-              </Popup>
-            </Marker>
-          </Fragment>
-        ))}
-
-        <MarkerClusterGroup chunkedLoading>
-          {services.filter(s => {
-            if (activeFilter === 'all') return true;
-            return s.type === activeFilter;
-          }).map(service => (
-            <Marker
-              key={service.id}
-              position={service.coordinates}
-              icon={createCustomIcon(
-                service.type === 'hospital' ? '🏥' :
-                service.type === 'bakery' ? '🍞' :
-                service.type === 'pharmacy' ? '💊' :
-                service.type === 'fuel' ? '⛽' : 
-                service.type === 'food_water' ? '📦' :
-                service.type === 'ngo' ? '❤️' : '🛠️',
-                service.type === 'hospital' ? '#007AFF' : 
-                service.type === 'ngo' ? '#FF2D55' : 
-                service.type === 'food_water' ? '#34C759' : '#FFCC00'
-              )}
-            >
-            <Popup>
-                <div className="p-2 min-w-[200px]" dir={isRTL ? 'rtl' : 'ltr'}>
-                  <h3 className="font-bold text-sm mb-1">{service.name}</h3>
-                  <div className={`flex items-center gap-2 mb-2 p-1.5 rounded-lg ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
-                    <div className={`w-2 h-2 rounded-full ${service.status === 'open' ? 'bg-safety' : 'bg-warning'}`} />
-                    <p className={`text-[10px] font-black uppercase ${service.status === 'open' ? 'text-safety' : 'text-warning'}`}>
-                      {service.status === 'open' ? t.operational : service.status === 'limited' ? t.limited : t.closed}
-                    </p>
-                  </div>
-                  {service.type === 'ngo' && (
-                    <div className="space-y-1 mt-2 border-t border-white/10 pt-2">
-                      <div className="flex justify-between text-[10px]">
-                        <span className="text-zinc-500 uppercase font-bold">{t.aidType}:</span>
-                        <span className="font-bold">{t[service.aidType || 'multi']}</span>
-                      </div>
-                      <div className="flex justify-between text-[10px]">
-                        <span className="text-zinc-500 uppercase font-bold">{t.hours}:</span>
-                        <span className="font-bold">{service.hours}</span>
-                      </div>
-                      {service.name.includes('LRC') && (
-                        <div className="mt-2 p-2 bg-danger/10 rounded-lg text-center">
-                          <p className="text-[10px] font-black text-danger uppercase tracking-widest">{t.lrcEmergency}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </Popup>
-            </Marker>
-          ))}
-        </MarkerClusterGroup>
-
-        {/* Overpass API Hospital Markers */}
-        <MarkerClusterGroup chunkedLoading>
-          {(hospitalData || []).map((hospital: any) => (
-            <Marker
-              key={hospital.id}
-              position={[hospital.lat, hospital.lon]}
-              icon={hospitalCrossIcon}
-            >
-              <Popup>
-                <div className="p-3 min-w-[200px]" style={{ direction: 'ltr' }}>
-                  <p style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px', color: '#007AFF' }}>HOSPITAL</p>
-                  <h3 style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px', color: '#111' }}>{hospital.name}</h3>
-                  <a
-                    href="tel:140"
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                      width: '100%', padding: '10px', borderRadius: '12px',
-                      backgroundColor: '#FF3B30', color: 'white', fontWeight: 800,
-                      fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em',
-                      textDecoration: 'none', textAlign: 'center'
-                    }}
-                  >
-                    📞 Call Emergency (140)
-                  </a>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
-        </MarkerClusterGroup>
-
-        {routePath.length > 1 && (
-          <Polyline positions={routePath} pathOptions={{ color: '#007AFF', weight: 6, opacity: 0.8, dashArray: '10, 10' }} />
-        )}
-
-        {/* Safe Check-in Green Ripple Markers */}
-        {(props.safeCheckIns || []).slice(0, 10).map((ci: any) => {
-          // Resolve district center for marker placement (privacy: only district center)
-          const dist = (props.districts || []).find((d: any) => d.id === ci.districtId);
-          if (!dist) return null;
-          const center: [number, number] = dist.bounds[0];
-          return (
-            <Fragment key={ci.id}>
-              <PulseCircle center={center} pulse={pulse} lowPowerMode={lowPowerMode} color="#34C759" radius={400} />
-              <Marker position={center} icon={safeCheckInIcon}>
-                <Popup>
-                  <div className="p-2 min-w-[180px]" style={{ direction: 'ltr' }}>
-                    <p style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px', color: '#34C759' }}>SAFE CHECK-IN</p>
-                    <p style={{ fontWeight: 700, fontSize: '13px', marginBottom: '4px' }}>{ci.userId} is SAFE</p>
-                    <p style={{ fontSize: '10px', color: '#999' }}>{dist.name.en} District</p>
-                  </div>
-                </Popup>
-              </Marker>
-            </Fragment>
-          );
-        })}
-      </MapContainer>
-    </div>
-  );
-});
-
-// --- Sidebar removed for Ultra-Clean UI ---
-
-// --- SOS Modal (Glassmorphism) ---
-const SOSModal = ({ isOpen, onClose, t, isRTL, theme }: any) => {
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[4000] flex items-center justify-center p-6">
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }} 
-            onClick={onClose} 
-            className="absolute inset-0 bg-black/80 backdrop-blur-2xl" 
-          />
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0, y: 20 }} 
-            animate={{ scale: 1, opacity: 1, y: 0 }} 
-            exit={{ scale: 0.9, opacity: 0, y: 20 }} 
-            className={`relative w-full max-w-sm rounded-[32px] p-8 text-center shadow-2xl border backdrop-blur-3xl ${theme === 'dark' ? 'bg-[#121212]/70 border-white/10' : 'bg-white/70 border-zinc-200'}`}
-          >
-            <div className="space-y-8">
-              <div className="flex justify-center">
-                <div className="relative">
-                  <div className="absolute inset-0 w-20 h-20 rounded-full bg-danger/20 animate-ping" />
-                  <div className="relative w-20 h-20 rounded-full bg-danger/10 flex items-center justify-center shadow-[0_0_40px_rgba(255,59,48,0.3)]">
-                    <Phone className="w-10 h-10 text-danger" />
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <h2 className="text-2xl font-black uppercase tracking-tight">{t.emergency}</h2>
-                <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest">Direct Dial</p>
-              </div>
-              <div className="grid grid-cols-1 gap-4">
-                <motion.a 
-                  whileTap={{ scale: 0.95 }}
-                  href="tel:140"
-                  className="flex items-center justify-between p-6 rounded-[24px] bg-danger text-black font-black transition-all shadow-xl shadow-danger/20 group"
-                >
-                  <div className="flex flex-col items-start">
-                    <span className="text-[10px] opacity-70 uppercase tracking-widest">RED CROSS</span>
-                    <span className="text-xl">140</span>
-                  </div>
-                  <PhoneOutgoing className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
-                </motion.a>
-                <motion.a 
-                  whileTap={{ scale: 0.95 }}
-                  href="tel:125"
-                  className={`flex items-center justify-between p-6 rounded-[24px] font-black transition-all shadow-xl ${theme === 'dark' ? 'bg-white text-black' : 'bg-zinc-900 text-white'} group`}
-                >
-                  <div className="flex flex-col items-start">
-                    <span className="text-[10px] opacity-70 uppercase tracking-widest">CIVIL DEFENSE</span>
-                    <span className="text-xl">125</span>
-                  </div>
-                  <PhoneOutgoing className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
-                </motion.a>
-              </div>
-              <button 
-                onClick={onClose}
-                className="text-xs font-black uppercase tracking-widest text-zinc-500 hover:text-zinc-300 transition-colors py-2"
-              >
-                {t.close}
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
-};
-
-// --- Relative Timestamp Utility ---
-const timeAgo = (createdAt: number | undefined, fallback: string): string => {
-  if (!createdAt) return fallback;
-  const diff = Date.now() - createdAt;
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return 'Just now';
-  const mins = Math.floor(seconds / 60);
-  if (mins < 60) return `${mins} min${mins > 1 ? 's' : ''} ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} hr${hours > 1 ? 's' : ''} ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} day${days > 1 ? 's' : ''} ago`;
-};
-
-type FeedFilter = 'all' | 'strikes' | 'roads' | 'checkin';
-
-// --- Bottom Sheet ---
-const BottomSheet = ({ 
-  theme, t, isRTL, districts, startDistrict, setStartDistrict, endDistrict, setEndDistrict, 
-  getDistrictName, calculateSafestRoute, isRouting, routePath, handleShare, filteredAlerts,
-  focusedAlertId, setFocusedAlertId, setIsReportModalOpen, setIsVideoCallOpen, setIsSOSModalOpen,
-  safeCheckIns, onSafeCheckIn, userSafeDistrict
-}: any) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [feedFilter, setFeedFilter] = useState<FeedFilter>('all');
-  const controls = useAnimation();
-
-  const onDragEnd = (event: any, info: any) => {
-    if (info.offset.y < -50) setIsOpen(true);
-    if (info.offset.y > 50) setIsOpen(false);
-  };
-
-  // Apply feed category filter
-  const feedAlerts = useMemo(() => {
-    const sorted = [...filteredAlerts].sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
-    if (feedFilter === 'strikes') return sorted.filter((a: any) => a.type === 'airstrike' || a.type === 'danger');
-    if (feedFilter === 'roads') return sorted.filter((a: any) => a.type === 'road_closure');
-    return sorted;
-  }, [filteredAlerts, feedFilter]);
-  
-  return (
-    <motion.div
-      drag="y"
-      dragConstraints={{ top: 0, bottom: 0 }}
-      onDragEnd={onDragEnd}
-      initial={{ y: 'calc(100% - 80px)' }}
-      animate={{ y: isOpen ? 0 : 'calc(100% - 80px)' }}
-      transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-      className={`fixed bottom-0 left-0 right-0 z-[2500] h-[80vh] rounded-t-[32px] border-t backdrop-blur-3xl transition-colors duration-500 ${theme === 'dark' ? 'bg-[#121212]/60 border-white/10' : 'bg-white/70 border-zinc-200 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]'}`}
-    >
-      <div 
-        className="w-full h-12 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <div className={`w-10 h-1 rounded-full mb-1 ${theme === 'dark' ? 'bg-white/20' : 'bg-zinc-300'}`} />
-        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{isOpen ? t.swipeDown : 'Safety Panel'}</p>
-      </div>
-
-      <div className="px-5 pb-20 h-full overflow-y-auto no-scrollbar">
-        <div className="max-w-xl mx-auto space-y-8">
-          {/* Emergency Actions */}
-          <div className="grid grid-cols-2 gap-3">
-            <motion.button 
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setIsSOSModalOpen(true)}
-              className="flex flex-col items-center justify-center gap-2 p-5 rounded-3xl bg-danger text-black shadow-lg shadow-danger/20"
-            >
-              <Phone className="w-6 h-6" />
-              <span className="text-[10px] font-black uppercase tracking-widest">SOS</span>
-            </motion.button>
-            <motion.button 
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setIsReportModalOpen(true)}
-              className={`flex flex-col items-center justify-center gap-2 p-5 rounded-3xl border ${theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-zinc-100 border-zinc-200'}`}
-            >
-              <AlertTriangle className="w-6 h-6 text-warning" />
-              <span className="text-[10px] font-black uppercase tracking-widest">{t.report}</span>
-            </motion.button>
-          </div>
-
-          <motion.button 
-            whileTap={{ scale: 0.98 }}
-            onClick={() => setIsVideoCallOpen(true)}
-            className={`w-full p-5 rounded-3xl border flex items-center justify-between group transition-all ${theme === 'dark' ? 'bg-indigo-500/10 border-indigo-500/20' : 'bg-indigo-50 border-indigo-100'}`}
-          >
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-2xl bg-indigo-500 text-white">
-                <Video className="w-5 h-5" />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-black uppercase tracking-tight text-indigo-500">{t.videoHub}</p>
-                <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">{t.emergencyVideoCall}</p>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-indigo-500 opacity-50" />
-          </motion.button>
-
-          {/* I AM SAFE Button */}
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={onSafeCheckIn}
-            className={`w-full p-5 rounded-3xl border flex items-center justify-between group transition-all ${
-              userSafeDistrict 
-                ? 'bg-safety/20 border-safety/40 shadow-lg shadow-safety/10' 
-                : theme === 'dark' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-emerald-50 border-emerald-100'
-            }`}
-          >
-            <div className="flex items-center gap-4">
-              <div className={`relative p-3 rounded-2xl text-white ${userSafeDistrict ? 'bg-safety' : 'bg-emerald-500'}`}>
-                {userSafeDistrict && <div className="absolute inset-0 rounded-2xl bg-safety animate-ping opacity-30" />}
-                <ShieldCheck className="w-5 h-5 relative z-10" />
-              </div>
-              <div className="text-left">
-                <p className={`text-sm font-black uppercase tracking-tight ${userSafeDistrict ? 'text-safety' : 'text-emerald-500'}`}>
-                  {userSafeDistrict ? `✓ MARKED SAFE` : t.iAmSafe || 'I Am Safe'}
-                </p>
-                <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">
-                  {userSafeDistrict ? `${getDistrictName(userSafeDistrict)} District` : 'Tap to check in'}
-                </p>
-              </div>
-            </div>
-            <ChevronRight className={`w-5 h-5 opacity-50 ${userSafeDistrict ? 'text-safety' : 'text-emerald-500'}`} />
-          </motion.button>
-
-          {/* Feed Section — Expanded Scrollable History */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between px-2">
-              <h3 className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{t.liveSafetyFeed}</h3>
-              <span className={`text-[8px] font-mono px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-white/5 text-zinc-400' : 'bg-zinc-100 text-zinc-500'}`}>
-                {feedAlerts.length} reports
-              </span>
-            </div>
-
-            {/* Filter Buttons */}
-            <div className="flex gap-2 px-1">
-              {([
-                { id: 'all' as FeedFilter, label: 'All' },
-                { id: 'strikes' as FeedFilter, label: 'Strikes' },
-                { id: 'roads' as FeedFilter, label: 'Roads' },
-                { id: 'checkin' as FeedFilter, label: 'Check-in' },
-              ]).map(btn => (
-                <button
-                  key={btn.id}
-                  onClick={() => setFeedFilter(btn.id)}
-                  className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all border ${
-                    feedFilter === btn.id 
-                      ? btn.id === 'strikes' ? 'bg-danger text-black border-danger' 
-                        : btn.id === 'roads' ? 'bg-warning text-black border-warning'
-                        : btn.id === 'checkin' ? 'bg-safety text-black border-safety'
-                        : 'bg-white text-black border-white'
-                      : theme === 'dark' ? 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10' : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200'
-                  }`}
-                >
-                  {btn.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Scrollable History Log */}
-            <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-1" style={{ scrollbarWidth: 'thin' }}>
-              {feedAlerts.length === 0 && (
-                <div className={`p-6 rounded-2xl text-center ${theme === 'dark' ? 'bg-white/5' : 'bg-zinc-50'}`}>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">No reports for this filter</p>
-                </div>
-              )}
-              {feedAlerts.map((alert: any) => (
-                <motion.div
-                  key={alert.id} layout initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
-                  onClick={() => setFocusedAlertId(focusedAlertId === alert.id ? null : alert.id)}
-                  className={`p-4 rounded-2xl border cursor-pointer transition-all ${focusedAlertId === alert.id ? 'bg-danger/10 border-danger' : theme === 'dark' ? 'bg-white/5 border-white/5' : 'bg-zinc-50 border-zinc-100'}`}
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[8px] font-black uppercase tracking-tighter px-2 py-0.5 rounded w-fit ${alert.type === 'danger' || alert.type === 'airstrike' ? 'bg-danger text-black' : alert.type === 'road_closure' ? 'bg-warning text-black' : 'bg-safety text-black'}`}>{alert.type === 'road_closure' ? t.roadClosure : alert.type}</span>
-                      {(alert.verificationCount || 0) >= 3 && (
-                        <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-safety/10 text-safety border border-safety/30">✓ {t.verified}</span>
-                      )}
-                    </div>
-                    <span className="text-[8px] font-mono text-zinc-500">{timeAgo(alert.createdAt, alert.timestamp)}</span>
-                  </div>
-                  <div className="flex items-center gap-1 mb-1"><MapPin className="w-3 h-3 text-zinc-500" /><p className={`text-xs font-bold ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>{alert.location}</p></div>
-                  <p className="text-[10px] text-zinc-500 leading-relaxed">{alert.message}</p>
-                </motion.div>
-              ))}
-            </div>
-
-            {/* Community Check-in Board */}
-            {feedFilter === 'checkin' && (
-              <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-1" style={{ scrollbarWidth: 'thin' }}>
-                <div className={`p-4 rounded-2xl border ${theme === 'dark' ? 'bg-safety/5 border-safety/20' : 'bg-emerald-50 border-emerald-100'}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <ShieldCheck className="w-4 h-4 text-safety" />
-                    <h4 className="text-[10px] font-black uppercase tracking-widest text-safety">Community Check-in Board</h4>
-                  </div>
-                  <p className="text-[9px] text-zinc-500">Showing users who marked themselves safe. Only district shown for privacy.</p>
-                </div>
-                {(safeCheckIns || []).length === 0 && (
-                  <div className={`p-6 rounded-2xl text-center ${theme === 'dark' ? 'bg-white/5' : 'bg-zinc-50'}`}>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">No check-ins yet</p>
-                  </div>
-                )}
-                {(safeCheckIns || []).sort((a: any, b: any) => b.createdAt - a.createdAt).map((ci: any) => (
-                  <motion.div
-                    key={ci.id} layout initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
-                    className={`p-4 rounded-2xl border ${theme === 'dark' ? 'bg-white/5 border-safety/10' : 'bg-zinc-50 border-emerald-100'}`}
-                  >
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-safety/20 flex items-center justify-center">
-                          <ShieldCheck className="w-4 h-4 text-safety" />
-                        </div>
-                        <div>
-                          <p className={`text-xs font-bold ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
-                            {ci.userId} <span className="text-safety">is SAFE</span>
-                          </p>
-                          <p className="text-[9px] text-zinc-500">{getDistrictName(ci.districtId)} District</p>
-                        </div>
-                      </div>
-                      <span className="text-[8px] font-mono text-zinc-500">{timeAgo(ci.createdAt, '')}</span>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-// --- Main App ---
+// ═════════════════════════════════════════════════════════════════════════════
+//  MAIN APP COMPONENT
+// ═════════════════════════════════════════════════════════════════════════════
 export default function App() {
+  // ── Data hook ──────────────────────────────────────────────────────────────
   const { districts, alerts, services, safeCheckIns, addAlert, updateAlert, addSafeCheckIn, locations } = useSafetyData();
-  const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('guardian-lang') as Language) || 'en');
-  
-  const genAI = useMemo(() => process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null, []);
-  const lastFetchRef = React.useRef<number>(0);
-  const [isBackoffActive, setIsBackoffActive] = useState(() => {
-    const backoffUntil = localStorage.getItem('guardian-backoff-until');
-    return backoffUntil ? Date.now() < parseInt(backoffUntil) : false;
-  });
 
-  const fetchCrisisData = useCallback(async (force = false) => {
-    if (!genAI) return;
-    
-    const now = Date.now();
-    const backoffUntil = localStorage.getItem('guardian-backoff-until');
-    if (backoffUntil && now < parseInt(backoffUntil)) {
-      setIsBackoffActive(true);
-      return;
-    } else {
-      setIsBackoffActive(false);
-    }
-    
-    // Debounce: Don't fetch more than once every 2 minutes unless forced
-    if (!force && now - lastFetchRef.current < 120000) return;
-
-    try {
-      const response = await genAI.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: "Simulate a Live Data Analyst for Lebanon in 2026. Generate 5-10 realistic, timestamped reports of recent airstrikes, road closures, safe humanitarian shelters, and aid distribution points. Return JSON array of objects with type ('airstrike', 'road_closure', 'danger', 'info'), location, districtId (beirut, dahieh, tyre, nabatieh, baalbek), message, coordinates [lat, lng], timestamp (e.g. '2m'). Ensure locations are realistic for South Lebanon, Bekaa, and Beirut.",
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                type: { type: Type.STRING },
-                location: { type: Type.STRING },
-                districtId: { type: Type.STRING },
-                message: { type: Type.STRING },
-                coordinates: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-                timestamp: { type: Type.STRING }
-              },
-              required: ["type", "location", "districtId", "message", "coordinates", "timestamp"]
-            }
-          }
-        }
-      });
-
-      const data = JSON.parse(response.text);
-      data.forEach((report: any) => {
-        addAlert({
-          type: report.type || 'airstrike',
-          location: report.location,
-          districtId: report.districtId,
-          message: report.message,
-          coordinates: report.coordinates as [number, number],
-          timestamp: report.timestamp,
-          isUserReported: false
-        } as any);
-      });
-      
-      lastFetchRef.current = now;
-      // Cache successful data
-      localStorage.setItem('guardian-crisis-cache', JSON.stringify(data));
-      localStorage.setItem('guardian-crisis-last-fetch', now.toString());
-    } catch (error: any) {
-      console.error("Crisis data fetch failed:", error);
-      
-      // Handle Quota Exceeded (429)
-      if (error.message?.includes('429') || error.status === 'RESOURCE_EXHAUSTED' || error.message?.includes('quota')) {
-        const backoffTime = Date.now() + 600000; // 10 minutes
-        localStorage.setItem('guardian-backoff-until', backoffTime.toString());
-        setIsBackoffActive(true);
-      }
-    }
-  }, [addAlert, genAI]);
-
-  useEffect(() => {
-    // Load from cache on mount
-    const cachedData = localStorage.getItem('guardian-crisis-cache');
-    const lastFetch = localStorage.getItem('guardian-crisis-last-fetch');
-    if (cachedData) {
-      const data = JSON.parse(cachedData);
-      data.forEach((report: any) => {
-        addAlert({
-          type: report.type || 'airstrike',
-          location: report.location,
-          districtId: report.districtId,
-          message: report.message,
-          coordinates: report.coordinates as [number, number],
-          timestamp: report.timestamp,
-          isUserReported: false
-        } as any);
-      });
-      if (lastFetch) lastFetchRef.current = parseInt(lastFetch);
-    }
-
-    if (navigator.onLine) {
-      fetchCrisisData();
-    }
-    
-    const interval = setInterval(() => {
-      if (!navigator.onLine) return;
-      const backoffUntil = localStorage.getItem('guardian-backoff-until');
-      if (!backoffUntil || Date.now() > parseInt(backoffUntil)) {
-        fetchCrisisData();
-      }
-    }, 300000); // Every 5 mins
-    return () => clearInterval(interval);
-  }, [fetchCrisisData, addAlert]);
-
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-
-  const [earthquakes, setEarthquakes] = useState<any[]>([]);
-  const [seismicAlert, setSeismicAlert] = useState<any | null>(null);
-
-  // --- Overpass API: Fetch Lebanon Hospitals ---
-  const [hospitalData, setHospitalData] = useState<any[]>([]);
-
-  useEffect(() => {
-    const fetchHospitals = async () => {
-      // Always hydrate from cache first (instant offline display)
-      const cached = localStorage.getItem('guardian-hospitals-cache');
-      if (cached) {
-        try { setHospitalData(JSON.parse(cached)); } catch { /* corrupted cache */ }
-      }
-
-      // Only attempt network fetch if online
-      if (!navigator.onLine) return;
-
-      try {
-        const query = `[out:json];node["amenity"="hospital"](33.0,35.0,34.7,36.6);out;`;
-        const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
-        if (!response.ok) throw new Error('Overpass API request failed');
-        const data = await response.json();
-        const hospitals = (data.elements || []).map((el: any) => ({
-          id: el.id,
-          lat: el.lat,
-          lon: el.lon,
-          name: el.tags?.name || el.tags?.['name:en'] || el.tags?.['name:ar'] || 'Hospital'
-        })).slice(0, 50); // Cap at 50 for offline storage budget
-        setHospitalData(hospitals);
-        localStorage.setItem('guardian-hospitals-cache', JSON.stringify(hospitals));
-      } catch (error) {
-        console.error('Failed to fetch hospitals from Overpass:', error);
-        // Cache already loaded above — no-op, display stays intact
-      }
-    };
-    fetchHospitals();
-  }, []);
-
-  const fetchEarthquakes = useCallback(async () => {
-    try {
-      const response = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson');
-      const data = await response.json();
-      
-      const beirut = { lat: 33.8, lng: 35.5 };
-      
-      const filtered = data.features.filter((f: any) => {
-        const [lng, lat] = f.geometry.coordinates;
-        const mag = f.properties.mag;
-        
-        // Simple distance approximation for 500km
-        const dist = Math.sqrt(Math.pow(lat - beirut.lat, 2) + Math.pow(lng - beirut.lng, 2)) * 111;
-        
-        return mag > 2.0 && dist < 500;
-      }).map((f: any) => ({
-        id: f.id,
-        mag: f.properties.mag,
-        place: f.properties.place,
-        time: new Date(f.properties.time).toLocaleTimeString(),
-        coordinates: [f.geometry.coordinates[1], f.geometry.coordinates[0]] as [number, number]
-      }));
-
-      setEarthquakes(filtered);
-      localStorage.setItem('guardian-earthquake-cache', JSON.stringify(filtered));
-
-      // Check for large quakes (> 4.5)
-      const largeQuake = filtered.find((q: any) => q.mag > 4.5);
-      if (largeQuake) {
-        setSeismicAlert(largeQuake);
-      } else {
-        setSeismicAlert(null);
-      }
-    } catch (error) {
-      console.error("Failed to fetch earthquake data:", error);
-      const cached = localStorage.getItem('guardian-earthquake-cache');
-      if (cached) {
-        setEarthquakes(JSON.parse(cached));
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchEarthquakes();
-    const interval = setInterval(fetchEarthquakes, 300000); // 5 mins
-    return () => clearInterval(interval);
-  }, [fetchEarthquakes]);
-
+  // ── UI state ───────────────────────────────────────────────────────────────
+  const [lang, setLang] = useState<Language>(() => (localStorage.getItem('guardian-lang') as Language) || 'en');
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('guardian-theme') as Theme) || 'dark');
-  const [lowPowerMode, setLowPowerMode] = useState(() => localStorage.getItem('guardian-lowpower') === 'true');
-  const [lowBandwidthMode, setLowBandwidthMode] = useState(() => localStorage.getItem('guardian-lowbandwidth') === 'true');
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [showReport, setShowReport] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showRouting, setShowRouting] = useState(false);
+  const [showFeed, setShowFeed] = useState(false);
+  const [showQR, setShowQR] = useState(false);
+  const [showEmergency, setShowEmergency] = useState(false);
+  const [lowBandwidth, setLowBandwidth] = useState(false);
+  const [lowPower, setLowPower] = useState(false);
+  const [toast, setToast] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchLocation, setSearchLocation] = useState<[number, number] | null>(null);
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
-  const [startDistrict, setStartDistrict] = useState('');
-  const [endDistrict, setEndDistrict] = useState('');
-  const [routePath, setRoutePath] = useState<[number, number][]>(() => {
-    try {
-      const cached = localStorage.getItem('guardian-active-route');
-      return cached ? JSON.parse(cached) : [];
-    } catch { return []; }
-  });
-  const [routeInfo, _setRouteInfoRaw] = useState<{ duration: number; distance: number; dangersAvoided: number } | null>(() => {
-    try {
-      const cached = localStorage.getItem('guardian-active-route-info');
-      return cached ? JSON.parse(cached) : null;
-    } catch { return null; }
-  });
-  const setRouteInfoAndCache = useCallback((info: { duration: number; distance: number; dangersAvoided: number } | null) => {
-    _setRouteInfoRaw(info);
-    if (info) {
-      localStorage.setItem('guardian-active-route-info', JSON.stringify(info));
-    }
-  }, []);
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [mapCenter, setMapCenter] = useState<[number, number]>(LEBANON_CENTER);
+  const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
+
+  // ── Routing state ──────────────────────────────────────────────────────────
+  const [routeStart, setRouteStart] = useState('');
+  const [routeEnd, setRouteEnd] = useState('');
+  const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(null);
+  const [routeInfo, setRouteInfo] = useState<{ duration: number; dangerAvoided: number } | null>(null);
   const [isRouting, setIsRouting] = useState(false);
 
-  const [safeRouteToast, setSafeRouteToast] = useState(false);
-  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  const [isReportingMode, setIsReportingMode] = useState(false);
-  const [selectedDangerType, setSelectedDangerType] = useState('');
-  const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
-  const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
-  const [shareToast, setShareToast] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(false);
-  const [isQRModalOpen, setIsQRModalOpen] = useState(false);
-  const [isSOSModalOpen, setIsSOSModalOpen] = useState(false);
-  const t = useMemo(() => TRANSLATIONS[language], [language]);
-  const isRTL = useMemo(() => language === 'ar', [language]);
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+  // ── Report state ───────────────────────────────────────────────────────────
+  const [reportType, setReportType] = useState(0);
+  const [reportDetails, setReportDetails] = useState('');
 
+  // ── Feed filter ────────────────────────────────────────────────────────────
+  const [feedFilter, setFeedFilter] = useState<'all' | 'airstrikes' | 'roads'>('all');
+
+  const t = TRANSLATIONS[lang];
+  const isRtl = lang === 'ar';
+  const isDark = theme === 'dark';
+
+  // ── Persist preferences ────────────────────────────────────────────────────
+  useEffect(() => { localStorage.setItem('guardian-lang', lang); }, [lang]);
+  useEffect(() => { localStorage.setItem('guardian-theme', theme); }, [theme]);
+
+  // ── Geolocation ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (t) {
-      t.swipeDown = language === 'ar' ? 'اسحب للأسفل' : language === 'fr' ? 'Balayer vers le bas' : 'Swipe Down';
-      t.searchAndReport = language === 'ar' ? 'بحث وإبلاغ' : language === 'fr' ? 'Recherche & Rapport' : 'Search & Report';
-      t.videoHub = language === 'ar' ? 'مركز الفيديو' : language === 'fr' ? 'Hub Vidéo' : 'Video Hub';
-    }
-  }, [t, language]);
-
-  const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
-  const [jitsiRoomId, setJitsiRoomId] = useState('');
-  const [userSafeDistrict, setUserSafeDistrict] = useState<string | null>(null);
-  const [userSafeLocation, setUserSafeLocation] = useState<[number, number] | null>(null);
-
-  const handleStartVideoCall = useCallback(() => {
-    const roomId = `Guardian-LB-${Math.floor(100000 + Math.random() * 900000)}`;
-    setJitsiRoomId(roomId);
-    setIsVideoCallOpen(true);
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
+      () => console.warn('Geolocation unavailable')
+    );
   }, []);
 
-  const handleShareVideoCall = useCallback(() => {
-    const url = `https://meet.jit.si/${jitsiRoomId}`;
-    const message = encodeURIComponent(`${t.emergencyVideoCall}: ${url}`);
-    window.open(`https://wa.me/?text=${message}`, '_blank');
-  }, [jitsiRoomId, t.emergencyVideoCall]);
-
-  // --- I AM SAFE Check-in Handler ---
-  const handleSafeCheckIn = useCallback(() => {
-    // Attempt geolocation to determine district, fallback to 'beirut'
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude } = pos.coords;
-          setUserSafeLocation([latitude, longitude]);
-          // Find nearest district by simple distance
-          let nearestDist = districts[0];
-          let minDist = Infinity;
-          districts.forEach((d: any) => {
-            const center = d.bounds[0];
-            const dist = Math.sqrt(Math.pow(center[0] - latitude, 2) + Math.pow(center[1] - longitude, 2));
-            if (dist < minDist) { minDist = dist; nearestDist = d; }
-          });
-          setUserSafeDistrict(nearestDist.id);
-          addSafeCheckIn(nearestDist.id);
-        },
-        () => {
-          // Geolocation denied — default to Beirut
-          setUserSafeDistrict('beirut');
-          addSafeCheckIn('beirut');
-        },
-        { timeout: 5000, maximumAge: 60000 }
-      );
-    } else {
-      setUserSafeDistrict('beirut');
-      addSafeCheckIn('beirut');
-    }
-  }, [districts, addSafeCheckIn]);
-
+  // ── Toast auto-hide ────────────────────────────────────────────────────────
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').then(reg => {
-          console.log('SW registered:', reg);
-        }).catch(err => {
-          console.log('SW registration failed:', err);
-        });
-      });
-    }
-  }, []);
+    if (!toast) return;
+    const id = setTimeout(() => setToast(''), 3000);
+    return () => clearTimeout(id);
+  }, [toast]);
 
-  useEffect(() => {
-    const hasSeenWelcome = localStorage.getItem('guardian-welcome-seen');
-    if (!hasSeenWelcome) {
-      setShowWelcome(true);
-    }
-  }, []);
-
-  const dismissWelcome = useCallback(() => {
-    localStorage.setItem('guardian-welcome-seen', 'true');
-    setShowWelcome(false);
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('guardian-lang', language);
-    localStorage.setItem('guardian-theme', theme);
-    localStorage.setItem('guardian-lowpower', lowPowerMode.toString());
-    localStorage.setItem('guardian-lowbandwidth', lowBandwidthMode.toString());
-    document.documentElement.dir = isRTL ? 'rtl' : 'ltr';
-    document.documentElement.lang = language;
-  }, [language, theme, lowPowerMode, lowBandwidthMode, isRTL]);
-
+  // ── Filtered markers ──────────────────────────────────────────────────────
   const filteredAlerts = useMemo(() => {
-    if (!mapBounds) return alerts;
-    return alerts.filter(alert => mapBounds.contains(alert.coordinates));
-  }, [alerts, mapBounds]);
+    if (activeFilter === 'all') return alerts;
+    if (activeFilter === 'airstrikes') return alerts.filter(a => a.type === 'danger' || a.type === 'airstrike');
+    if (activeFilter === 'road_status') return alerts.filter(a => a.type === 'road_closure');
+    return [];
+  }, [alerts, activeFilter]);
 
+  const filteredServices = useMemo(() => {
+    if (activeFilter === 'all') return services;
+    const map: Record<string, string> = { hospitals: 'hospital', bakeries: 'bakery', pharmacies: 'pharmacy', fuel: 'fuel', ngo: 'ngo' };
+    const svcType = map[activeFilter];
+    return svcType ? services.filter(s => s.type === svcType) : [];
+  }, [services, activeFilter]);
+
+  // ── Search results ─────────────────────────────────────────────────────────
   const searchResults = useMemo(() => {
-    if (!searchQuery) return [];
-    const query = searchQuery.toLowerCase();
-    return locations.filter(loc => 
-      loc.name.toLowerCase().includes(query) || 
-      loc.ar.includes(query) || 
-      (loc.fr && loc.fr.toLowerCase().includes(query))
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
+    return locations.filter(l =>
+      l.name.toLowerCase().includes(q) || l.ar.includes(q) || (l.fr && l.fr.toLowerCase().includes(q))
     ).slice(0, 5);
   }, [searchQuery, locations]);
 
-  const getDistrictName = useCallback((id: string) => {
-    const district = districts.find(d => d.id === id);
-    return district ? district.name[language] : id;
-  }, [language]);
+  // ── Feed items (filtered + sorted) ────────────────────────────────────────
+  const feedItems = useMemo(() => {
+    let items = [...alerts].sort((a, b) => b.createdAt - a.createdAt);
+    if (feedFilter === 'airstrikes') items = items.filter(a => a.type === 'danger' || a.type === 'airstrike');
+    if (feedFilter === 'roads') items = items.filter(a => a.type === 'road_closure');
+    return items.slice(0, 20);
+  }, [alerts, feedFilter]);
 
-  const calculateSafestRoute = useCallback(async () => {
+  // ── OSRM Route calculation with 500m safety buffer ────────────────────────
+  const calculateRoute = useCallback(async () => {
+    if (!routeStart || !routeEnd) return;
+    const start = DISTRICT_COORDINATES[routeStart];
+    const end = DISTRICT_COORDINATES[routeEnd];
+    if (!start || !end) return;
     setIsRouting(true);
-    setRouteInfoAndCache(null);
     try {
-      const start = districts.find(d => d.id === startDistrict);
-      const end = districts.find(d => d.id === endDistrict);
-      if (!start || !end) { setIsRouting(false); return; }
-
-      const startCoord = start.bounds[0];
-      const endCoord = end.bounds[0];
-      // Active dangers: Red (airstrike) and Orange (road_closure)
-      const dangers = alerts.filter(a => a.type === 'airstrike' || a.type === 'road_closure');
-
-      // 500m Safety Buffer (~0.0045 degrees at Lebanon's latitude)
-      const SAFETY_BUFFER = 0.0045;
-      const DETOUR_MULTIPLIER = 2.5; // Push waypoint 2.5x buffer distance away
-
-      // Helper: check if a point is within the buffer of any danger
-      const isNearDanger = (pt: [number, number]) => {
-        return dangers.some(d => {
-          const dist = Math.sqrt(Math.pow(d.coordinates[0] - pt[0], 2) + Math.pow(d.coordinates[1] - pt[1], 2));
-          return dist < SAFETY_BUFFER;
-        });
-      };
-
-      // Helper: nudge a point away from all nearby dangers
-      const nudgeAway = (pt: [number, number]): [number, number] => {
-        let [lat, lng] = pt;
-        dangers.forEach(d => {
-          const dist = Math.sqrt(Math.pow(d.coordinates[0] - lat, 2) + Math.pow(d.coordinates[1] - lng, 2));
-          if (dist < SAFETY_BUFFER) {
-            const dx = lat - d.coordinates[0];
-            const dy = lng - d.coordinates[1];
-            const angle = Math.atan2(dy, dx);
-            lat += Math.cos(angle) * SAFETY_BUFFER * DETOUR_MULTIPLIER;
-            lng += Math.sin(angle) * SAFETY_BUFFER * DETOUR_MULTIPLIER;
-          }
-        });
-        return [lat, lng];
-      };
-
-      // Phase 1: Pre-route — sample the direct line and inject detour waypoints
-      const avoidWaypoints: [number, number][] = [];
-      let dangersAvoided = 0;
-      const steps = 10;
-      for (let i = 1; i < steps; i++) {
-        const frac = i / steps;
-        let wp: [number, number] = [
-          startCoord[0] + (endCoord[0] - startCoord[0]) * frac,
-          startCoord[1] + (endCoord[1] - startCoord[1]) * frac
-        ];
-        if (isNearDanger(wp)) {
-          wp = nudgeAway(wp);
-          avoidWaypoints.push(wp);
-          dangersAvoided++;
-        }
-      }
-
-      // Build OSRM request with avoidance waypoints
-      const allPoints = [startCoord, ...avoidWaypoints, endCoord];
-      const coordStr = allPoints.map(p => `${p[1]},${p[0]}`).join(';');
-      const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
-
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data.routes && data.routes.length > 0) {
-        let route = data.routes[0];
-        let coords: [number, number][] = route.geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
-
-        // Phase 2: Post-route intersection check — if OSRM path still intersects danger, re-route
-        const intersectingDangers = dangers.filter(d =>
-          coords.some(pt => {
-            const dist = Math.sqrt(Math.pow(d.coordinates[0] - pt[0], 2) + Math.pow(d.coordinates[1] - pt[1], 2));
-            return dist < SAFETY_BUFFER;
-          })
+      const url = `${OSRM_BASE_URL}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.routes?.[0]) {
+        const rawCoords: [number, number][] = data.routes[0].geometry.coordinates.map(
+          (c: number[]) => [c[1], c[0]] as [number, number]
         );
-
-        if (intersectingDangers.length > 0) {
-          // Inject additional detour waypoints for each intersecting danger
-          const extraWaypoints: [number, number][] = intersectingDangers.map(d => {
-            const angle = Math.atan2(
-              endCoord[0] - startCoord[0],
-              endCoord[1] - startCoord[1]
-            ) + Math.PI / 2; // perpendicular
-            return [
-              d.coordinates[0] + Math.cos(angle) * SAFETY_BUFFER * 3,
-              d.coordinates[1] + Math.sin(angle) * SAFETY_BUFFER * 3
-            ] as [number, number];
-          });
-          dangersAvoided += intersectingDangers.length;
-
-          // Re-route with extra waypoints
-          const retryPoints = [startCoord, ...avoidWaypoints, ...extraWaypoints, endCoord];
-          const retryStr = retryPoints.map(p => `${p[1]},${p[0]}`).join(';');
-          const retryUrl = `https://router.project-osrm.org/route/v1/driving/${retryStr}?overview=full&geometries=geojson`;
-          try {
-            const retryRes = await fetch(retryUrl);
-            const retryData = await retryRes.json();
-            if (retryData.routes && retryData.routes.length > 0) {
-              route = retryData.routes[0];
-              coords = route.geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+        // 500m safety buffer: shift route points near danger zones
+        const dangerZones = alerts.filter(a => a.type === 'danger' || a.type === 'airstrike').map(a => a.coordinates);
+        const safeCoords = rawCoords.map(point => {
+          for (const dz of dangerZones) {
+            if (haversine(point, dz) < SAFETY_BUFFER_METERS) {
+              const bearing = Math.atan2(point[1] - dz[1], point[0] - dz[0]);
+              const offset = SAFETY_BUFFER_METERS / 111320;
+              return [point[0] + Math.cos(bearing) * offset, point[1] + Math.sin(bearing) * offset] as [number, number];
             }
-          } catch { /* use first route if retry fails */ }
-        }
-
-        setRoutePath(coords);
-        // Cache route to LocalStorage for offline persistence
-        localStorage.setItem('guardian-active-route', JSON.stringify(coords));
-        const durationMin = Math.round(route.duration / 60);
-        const distanceKm = Math.round(route.distance / 1000);
-        setRouteInfoAndCache({ duration: durationMin, distance: distanceKm, dangersAvoided });
-        setSafeRouteToast(true);
-        setTimeout(() => setSafeRouteToast(false), 3000);
-      } else {
-        setRoutePath([startCoord, endCoord]);
+          }
+          return point;
+        });
+        const avoided = dangerZones.filter(dz => rawCoords.some(p => haversine(p, dz) < SAFETY_BUFFER_METERS)).length;
+        setRouteCoords(safeCoords);
+        setRouteInfo({ duration: Math.round(data.routes[0].duration / 60), dangerAvoided: avoided });
+        setToast(`${t.safePathFound} ✓`);
+        setMapCenter(start);
+        setMapZoom(10);
       }
-    } catch (error) {
-      console.error('OSRM routing failed, using offline fallback:', error);
-      // Offline Shield: pull cached route if available
-      const cachedRoute = localStorage.getItem('guardian-active-route');
-      const cachedInfo = localStorage.getItem('guardian-active-route-info');
-      if (cachedRoute) {
-        try {
-          setRoutePath(JSON.parse(cachedRoute));
-          if (cachedInfo) setRouteInfoAndCache(JSON.parse(cachedInfo));
-          setSafeRouteToast(true);
-          setTimeout(() => setSafeRouteToast(false), 3000);
-        } catch { /* corrupted cache, ignore */ }
-      } else {
-        // Last resort: direct line
-        const start = districts.find(d => d.id === startDistrict);
-        const end = districts.find(d => d.id === endDistrict);
-        if (start && end) {
-          setRoutePath([start.bounds[0], end.bounds[0]]);
-        }
-      }
+    } catch (err) {
+      console.error('Route calculation failed:', err);
+      setToast('Route calculation failed');
     }
     setIsRouting(false);
-  }, [startDistrict, endDistrict, alerts]);
+  }, [routeStart, routeEnd, alerts, t]);
 
-  const handleMapClick = useCallback((lat: number, lng: number) => {
-    if (isReportingMode) {
-      setIsReportModalOpen(true);
-      setIsReportingMode(false);
-    }
-  }, [isReportingMode]);
+  // ── Submit report ──────────────────────────────────────────────────────────
+  const submitReport = useCallback(() => {
+    const coord: [number, number] = userLocation || LEBANON_CENTER;
+    const nearestDistrict = districts.reduce((nearest, d) => {
+      const dCenter: [number, number] = [(d.bounds[0][0] + d.bounds[1][0]) / 2, (d.bounds[0][1] + d.bounds[1][1]) / 2];
+      const dist = haversine(coord, dCenter);
+      return dist < nearest.dist ? { id: d.id, dist } : nearest;
+    }, { id: 'beirut', dist: Infinity });
+    addAlert({
+      type: reportType <= 1 ? 'danger' : reportType === 4 ? 'info' : 'warning',
+      location: DANGER_TYPES[lang][reportType],
+      districtId: nearestDistrict.id,
+      message: reportDetails || DANGER_TYPES[lang][reportType],
+      createdAt: Date.now(),
+      coordinates: coord,
+      isUserReported: true,
+    });
+    setShowReport(false);
+    setReportDetails('');
+    setToast(`${t.report} ✓`);
+  }, [userLocation, reportType, reportDetails, lang, t, districts, addAlert]);
 
-  const handleShare = useCallback(() => {
-    const url = window.location.href;
-    navigator.clipboard.writeText(url);
-    setShareToast(true);
-    setTimeout(() => setShareToast(false), 3000);
-  }, []);
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const shareLocation = useCallback(() => {
+    if (!userLocation) return;
+    const url = `https://wa.me/?text=${encodeURIComponent(t.whatsappMessage + `https://maps.google.com/?q=${userLocation[0]},${userLocation[1]}`)}`;
+    window.open(url, '_blank');
+  }, [userLocation, t]);
 
+  const handleIAmSafe = useCallback(() => {
+    if (!userLocation) return;
+    const nearest = districts.reduce((n, d) => {
+      const c: [number, number] = [(d.bounds[0][0] + d.bounds[1][0]) / 2, (d.bounds[0][1] + d.bounds[1][1]) / 2];
+      const dist = haversine(userLocation, c);
+      return dist < n.dist ? { id: d.id, dist } : n;
+    }, { id: 'beirut', dist: Infinity });
+    addSafeCheckIn(nearest.id);
+    setToast(`${t.iAmSafe} ✓`);
+  }, [userLocation, districts, addSafeCheckIn, t]);
+
+  // ── Theme classes ──────────────────────────────────────────────────────────
+  const bg = isDark ? 'bg-[#121212]' : 'bg-white';
+  const surface = isDark ? 'bg-[#1c1c1e]' : 'bg-gray-100';
+  const textMain = isDark ? 'text-white' : 'text-gray-900';
+  const textSub = isDark ? 'text-gray-400' : 'text-gray-500';
+  const border = isDark ? 'border-white/10' : 'border-gray-200';
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  RENDER
+  // ═══════════════════════════════════════════════════════════════════════════
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t, isRTL }}>
-      <div className={`h-[100dvh] w-full overflow-hidden font-sans transition-colors duration-500 ${theme === 'dark' ? 'bg-[#121212] text-white' : 'bg-zinc-50 text-zinc-900'}`}>
-      <main className="relative h-[100dvh] w-full overflow-hidden">
-        {/* Floating UI Layer: Slim Search & Route Bar */}
-        {/* GUARDIAN Brand Logo — Fixed Top-Left */}
-        <div className="absolute top-4 left-4 z-[2000] pointer-events-auto">
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl backdrop-blur-2xl border shadow-lg ${theme === 'dark' ? 'bg-[#121212]/60 border-white/10' : 'bg-white/60 border-zinc-200'}`}>
-            <Shield className="w-5 h-5 text-danger" />
-            <span className="text-sm font-black uppercase tracking-widest">Guardian</span>
-            {!isOnline && (
-              <div className="flex items-center gap-1 ml-1 px-2 py-0.5 rounded-lg bg-warning/15 border border-warning/30" title="Offline Mode Active">
-                <CloudOff className="w-3.5 h-3.5 text-warning" />
+    <div className={`relative w-screen h-[100dvh] overflow-hidden ${bg} ${textMain}`} dir={isRtl ? 'rtl' : 'ltr'}>
+
+      {/* ─── MAP ──────────────────────────────────────────────────────────── */}
+      <MapContainer center={LEBANON_CENTER} zoom={DEFAULT_ZOOM} className="w-full h-full z-0"
+        zoomControl={false} attributionControl={false}>
+        <MapController center={mapCenter} zoom={mapZoom} />
+        {!lowBandwidth && (
+          <TileLayer url={isDark
+            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+            : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'} />
+        )}
+        {/* User location */}
+        {userLocation && <Marker position={userLocation} icon={ICONS.user}>
+          <Popup><strong>📍 {t.shareLocation}</strong></Popup>
+        </Marker>}
+        {/* Alerts */}
+        {filteredAlerts.map(a => (
+          <Marker key={a.id} position={a.coordinates} icon={ICONS[a.type] || ICONS.warning}>
+            <Popup>
+              <div className="text-xs min-w-[180px]">
+                <strong>{a.location}</strong>
+                <p className="mt-1 opacity-80">{a.message}</p>
+                <div className="mt-2 flex items-center gap-2 text-[10px]">
+                  <span>{a.verified ? t.nnaVerified : t.communityReport}</span>
+                  <span>• {timeAgo(a.createdAt)}</span>
+                </div>
+                {a.type === 'road_closure' && (
+                  <div className="mt-2 flex gap-1">
+                    <button onClick={() => updateAlert(a.id, { verificationCount: (a.verificationCount || 0) + 1 })}
+                      className="px-2 py-1 bg-red-600 text-white rounded text-[10px]">{t.stillClosed}</button>
+                    <button onClick={() => updateAlert(a.id, { roadOpen: true })}
+                      className="px-2 py-1 bg-green-600 text-white rounded text-[10px]">{t.roadNowOpen}</button>
+                  </div>
+                )}
               </div>
-            )}
+            </Popup>
+          </Marker>
+        ))}
+        {/* Services */}
+        {filteredServices.map(s => (
+          <Marker key={s.id} position={s.coordinates} icon={ICONS[s.type] || ICONS.info}>
+            <Popup>
+              <div className="text-xs min-w-[160px]">
+                <strong>{SERVICE_ICONS[s.type]} {s.name}</strong>
+                <p className={`mt-1 font-bold ${s.status === 'open' ? 'text-green-500' : s.status === 'limited' ? 'text-yellow-500' : 'text-red-500'}`}>
+                  {s.status === 'open' ? t.operational : s.status === 'limited' ? t.limited : t.closed}
+                </p>
+                {s.hours && <p className="mt-1 opacity-70">{t.hours}: {s.hours}</p>}
+                {s.type === 'hospital' && <a href="tel:140" className="block mt-2 text-red-400 font-bold">{t.lrcEmergency}</a>}
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+        {/* Hospital fallback markers */}
+        {(activeFilter === 'all' || activeFilter === 'hospitals') && HOSPITAL_FALLBACK.map((h, i) => (
+          <Marker key={`hf-${i}`} position={h.coordinates} icon={ICONS.hospital}>
+            <Popup>
+              <div className="text-xs">
+                <strong>🏥 {h.name}</strong>
+                <a href={`tel:${h.phone}`} className="block mt-1 text-blue-400 font-bold">📞 {h.phone}</a>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+        {/* Route polyline */}
+        {routeCoords && <Polyline positions={routeCoords} pathOptions={{
+          color: '#3B82F6', weight: 4, dashArray: '10 6', opacity: 0.9
+        }} />}
+      </MapContainer>
+
+      {/* ─── HEADER BAR ───────────────────────────────────────────────────── */}
+      <div className={`absolute top-0 left-0 right-0 z-[1000] ${surface}/90 backdrop-blur-xl border-b ${border}`}>
+        <div className="flex items-center justify-between px-3 py-2">
+          <h1 className="text-lg font-black tracking-tight text-red-500">🛡️ GUARDIAN</h1>
+          <div className="flex items-center gap-2">
+            {lowBandwidth && <span className="text-[10px] px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded-full">{t.lowBandwidthActive}</span>}
+            <button onClick={() => setShowSettings(true)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-sm">⚙️</button>
           </div>
         </div>
+        {/* Filter chips */}
+        <div className="flex gap-1.5 px-3 pb-2 overflow-x-auto no-scrollbar">
+          {FILTER_CATEGORIES.map(f => (
+            <button key={f.id} onClick={() => setActiveFilter(f.id)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all ${
+                activeFilter === f.id ? 'bg-red-500 text-white' : `${isDark ? 'bg-white/10 text-white/70' : 'bg-gray-200 text-gray-600'}`
+              }`}>
+              <span>{f.icon}</span> {f[lang]}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        <div className="absolute top-0 left-0 right-0 z-[2000] pointer-events-none flex flex-col items-center">
-          {!isOnline && (
-            <div className="w-full bg-zinc-800/80 backdrop-blur-md text-white p-1.5 flex items-center justify-center gap-2 border-b border-white/5 pointer-events-auto">
-              <WifiOff className="w-3 h-3 text-zinc-400" />
-              <span className="text-[9px] font-black uppercase tracking-widest">{t.workingOffline}</span>
+      {/* ─── SEARCH BAR ───────────────────────────────────────────────────── */}
+      <div className="absolute top-[88px] left-3 right-3 z-[1000]">
+        <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+          placeholder={t.searchPlaceholder}
+          className={`w-full px-4 py-2.5 rounded-2xl ${surface}/90 backdrop-blur-xl ${textMain} text-sm border ${border} outline-none`} />
+        {searchResults.length > 0 && (
+          <div className={`mt-1 rounded-2xl ${surface}/95 backdrop-blur-xl border ${border} overflow-hidden`}>
+            {searchResults.map((r, i) => (
+              <button key={i} onClick={() => { setMapCenter(r.coords as [number, number]); setMapZoom(14); setSearchQuery(''); }}
+                className={`w-full text-left px-4 py-2.5 text-sm ${textMain} hover:bg-white/10 border-b ${border} last:border-0`}>
+                📍 {lang === 'ar' ? r.ar : r.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ─── BOTTOM ACTION BAR ────────────────────────────────────────────── */}
+      <div className={`absolute bottom-0 left-0 right-0 z-[1000] ${surface}/90 backdrop-blur-xl border-t ${border} pb-[env(safe-area-inset-bottom)]`}>
+        <div className="flex items-center justify-around py-2.5 px-2">
+          <button onClick={() => { setShowRouting(true); setShowFeed(false); }}
+            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-blue-400">
+            <span className="text-lg">🧭</span>{t.findSafestPath}
+          </button>
+          <button onClick={() => setShowReport(true)}
+            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-red-400">
+            <span className="text-lg">🚨</span>{t.reportDanger}
+          </button>
+          <button onClick={() => { setShowFeed(true); setShowRouting(false); }}
+            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-green-400">
+            <span className="text-lg">📡</span>{t.liveSafetyFeed}
+          </button>
+          <button onClick={() => setShowEmergency(true)}
+            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-red-500">
+            <span className="text-lg">🆘</span>{t.emergency}
+          </button>
+        </div>
+      </div>
+
+      {/* ─── ROUTE PANEL ──────────────────────────────────────────────────── */}
+      {showRouting && (
+        <div className={`absolute bottom-16 left-3 right-3 z-[1001] ${surface} border ${border} rounded-3xl p-4`}>
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-sm font-bold">🧭 {t.findSafestPath}</h3>
+            <button onClick={() => { setShowRouting(false); setRouteCoords(null); setRouteInfo(null); }} className="text-lg">✕</button>
+          </div>
+          <select value={routeStart} onChange={e => setRouteStart(e.target.value)}
+            className={`w-full mb-2 px-3 py-2 rounded-xl ${isDark ? 'bg-white/10 text-white' : 'bg-gray-200 text-gray-900'} text-sm`}>
+            <option value="">{t.startPoint}</option>
+            {Object.keys(DISTRICT_COORDINATES).map(d => <option key={d} value={d}>{t.districts?.[d] || d}</option>)}
+          </select>
+          <select value={routeEnd} onChange={e => setRouteEnd(e.target.value)}
+            className={`w-full mb-3 px-3 py-2 rounded-xl ${isDark ? 'bg-white/10 text-white' : 'bg-gray-200 text-gray-900'} text-sm`}>
+            <option value="">{t.destination}</option>
+            {Object.keys(DISTRICT_COORDINATES).map(d => <option key={d} value={d}>{t.districts?.[d] || d}</option>)}
+          </select>
+          <button onClick={calculateRoute} disabled={isRouting || !routeStart || !routeEnd}
+            className="w-full py-2.5 bg-blue-600 text-white font-bold rounded-2xl text-sm disabled:opacity-40">
+            {isRouting ? t.routing : t.findSafestPath}
+          </button>
+          {routeInfo && (
+            <div className="mt-3 p-3 bg-green-500/10 border border-green-500/30 rounded-2xl text-xs">
+              <p className="text-green-400 font-bold">{t.safePathFound} ✓</p>
+              <p className="mt-1">{t.estimatedTime}: <strong>{routeInfo.duration} {t.minutes}</strong></p>
+              <p>{t.dangerAvoided}: <strong>{routeInfo.dangerAvoided}</strong></p>
             </div>
           )}
+        </div>
+      )}
 
-          {/* SEISMIC ALERT BANNER — High-priority */}
-          <AnimatePresence>
-            {seismicAlert && (
-              <motion.div
-                initial={{ y: -60, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: -60, opacity: 0 }}
-                transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-                className="w-full pointer-events-auto"
-              >
-                <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(90deg, #7C3AED, #A855F7, #DC2626)' }}>
-                  <div className="absolute inset-0 animate-pulse" style={{ background: 'linear-gradient(90deg, rgba(124,58,237,0.3), rgba(220,38,38,0.3), rgba(124,58,237,0.3))', backgroundSize: '200% 100%' }} />
-                  <div className="relative flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="relative shrink-0">
-                        <div className="absolute inset-0 w-8 h-8 rounded-full bg-white/20 animate-ping" />
-                        <div className="relative w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                          <Waves className="w-4 h-4 text-white" />
-                        </div>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-white/90">
-                          ⚠ {t.seismicAlert}
-                        </p>
-                        <p className="text-xs font-bold text-white truncate">
-                          {t.magnitude}: {seismicAlert.mag} {t.richter} — {seismicAlert.place}
-                        </p>
-                        <p className="text-[9px] font-bold text-white/70 uppercase tracking-wider">
-                          {t.seismicInstructions}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setSeismicAlert(null)}
-                      className="shrink-0 ml-2 p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5 text-white" />
-                    </button>
-                  </div>
+      {/* ─── SAFETY FEED ──────────────────────────────────────────────────── */}
+      {showFeed && (
+        <div className={`absolute bottom-16 left-0 right-0 z-[1001] ${surface} border-t ${border} rounded-t-3xl max-h-[60vh] overflow-hidden flex flex-col`}>
+          <div className="flex justify-between items-center p-3 border-b border-white/5">
+            <h3 className="text-sm font-bold">📡 {t.liveSafetyFeed}</h3>
+            <button onClick={() => setShowFeed(false)} className="text-lg">✕</button>
+          </div>
+          <div className="flex gap-1 px-3 py-2">
+            {(['all', 'airstrikes', 'roads'] as const).map(f => (
+              <button key={f} onClick={() => setFeedFilter(f)}
+                className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${feedFilter === f ? 'bg-red-500 text-white' : 'bg-white/10 text-white/60'}`}>
+                {f === 'all' ? '📍 All' : f === 'airstrikes' ? '💥 Strikes' : '🚧 Roads'}
+              </button>
+            ))}
+          </div>
+          <div className="overflow-y-auto flex-1 px-3 pb-3 space-y-2">
+            {feedItems.map(a => (
+              <div key={a.id} className={`p-3 rounded-2xl border ${a.type === 'danger' || a.type === 'airstrike' ? 'border-red-500/30 bg-red-500/5' : a.type === 'road_closure' ? 'border-orange-500/30 bg-orange-500/5' : 'border-white/10 bg-white/5'}`}>
+                <div className="flex justify-between items-start">
+                  <span className="font-bold text-xs">{a.location}</span>
+                  <span className="text-[10px] opacity-50">{timeAgo(a.createdAt)}</span>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          
-          <div className="w-full max-w-xl p-3 space-y-2">
-            {/* Slim Glassmorphism Search/Route Bar */}
-            <div className={`pointer-events-auto backdrop-blur-2xl rounded-3xl border shadow-2xl transition-all duration-500 ${theme === 'dark' ? 'bg-[#121212]/40 border-white/10' : 'bg-white/50 border-zinc-200'}`}>
-              <div className="p-2 space-y-2">
-                <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className="flex-1 relative">
-                    <div className={`flex items-center gap-2 px-3 py-2 rounded-2xl border transition-all ${theme === 'dark' ? 'bg-white/5 border-white/10 focus-within:border-white/20' : 'bg-zinc-100/50 border-zinc-200 focus-within:border-zinc-300'}`}>
-                      <Search className="w-3.5 h-3.5 text-zinc-500" />
-                      <input 
-                        type="text" placeholder={t.searchPlaceholder} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                        className="bg-transparent border-none outline-none w-full text-xs font-medium"
-                      />
-                    </div>
-                  </div>
-                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => setIsSettingsOpen(true)} className={`p-2 rounded-2xl border shrink-0 ${theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-zinc-100/50 border-zinc-200'}`}><SettingsIcon className="w-4 h-4" /></motion.button>
-                </div>
-
-                <div className="flex gap-2">
-                  <div className="flex-1 grid grid-cols-2 gap-1.5">
-                    <select value={startDistrict} onChange={(e) => setStartDistrict(e.target.value)} className={`w-full border rounded-xl px-3 py-1.5 text-[10px] focus:outline-none appearance-none ${theme === 'dark' ? 'bg-white/5 border-white/10 text-white' : 'bg-zinc-50/50 border-zinc-200 text-zinc-900'}`}>
-                      <option value="">{t.startPoint}</option>
-                      {districts.map((d: any) => <option key={d.id} value={d.id}>{getDistrictName(d.id)}</option>)}
-                    </select>
-                    <select value={endDistrict} onChange={(e) => setEndDistrict(e.target.value)} className={`w-full border rounded-xl px-3 py-1.5 text-[10px] focus:outline-none appearance-none ${theme === 'dark' ? 'bg-white/5 border-white/10 text-white' : 'bg-zinc-50/50 border-zinc-200 text-zinc-900'}`}>
-                      <option value="">{t.destination}</option>
-                      {districts.map((d: any) => <option key={d.id} value={d.id}>{getDistrictName(d.id)}</option>)}
-                    </select>
-                  </div>
-                  <motion.button 
-                    whileTap={{ scale: 0.95 }} 
-                    onClick={calculateSafestRoute} 
-                    disabled={!startDistrict || !endDistrict || isRouting} 
-                    className={`px-4 rounded-xl transition-all ${startDistrict && endDistrict && !isRouting ? 'bg-safety text-black' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}
-                  >
-                    {isRouting ? <Activity className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
-                  </motion.button>
+                <p className="text-[11px] mt-1 opacity-70">{a.message}</p>
+                <div className="flex items-center gap-2 mt-1.5 text-[10px]">
+                  {a.verified ? <span className="text-green-400">{t.nnaVerified}</span> : <span className="text-yellow-400">{t.communityReport}</span>}
+                  {a.verificationCount ? <span className="opacity-40">• {t.verifiedBy.replace('{count}', String(a.verificationCount))}</span> : null}
                 </div>
               </div>
-            </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-            {/* Horizontal Filter Chips */}
-            <div className="pointer-events-auto flex justify-center w-full">
-              <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 max-w-full px-2">
-                {[
-                  { id: 'airstrike', icon: Flame, label: t.airstrikes, color: 'danger' },
-                  { id: 'road_closure', icon: Construction, label: t.roadStatus, color: 'warning' },
-                  { id: 'earthquake', icon: Waves, label: t.earthquakes, color: 'purple-500' },
-                  { id: 'ngo', icon: HandHeart, label: 'NGOs', color: 'safety' }
-                ].map(chip => (
-                  <button 
-                    key={chip.id}
-                    onClick={() => setActiveFilter(activeFilter === chip.id ? null : chip.id)} 
-                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all backdrop-blur-xl whitespace-nowrap ${activeFilter === chip.id ? `bg-${chip.color} text-black border-${chip.color}` : theme === 'dark' ? 'bg-black/30 border-white/10 text-zinc-400' : 'bg-white/40 border-zinc-200 text-zinc-500'}`}
-                  >
-                    <chip.icon className="w-3 h-3" />{chip.label}
+      {/* ─── REPORT MODAL ─────────────────────────────────────────────────── */}
+      {showReport && (
+        <div className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-sm flex items-end justify-center">
+          <div className={`w-full max-w-md ${surface} rounded-t-3xl p-5`}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-base font-bold">🚨 {t.reportDanger}</h3>
+              <button onClick={() => setShowReport(false)} className="text-xl">✕</button>
+            </div>
+            <p className="text-xs mb-3 opacity-60">{t.dangerType}</p>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {DANGER_TYPES[lang].map((d, i) => (
+                <button key={i} onClick={() => setReportType(i)}
+                  className={`p-2.5 rounded-2xl text-xs font-semibold border transition-all ${reportType === i ? 'border-red-500 bg-red-500/20 text-red-400' : `border-white/10 ${isDark ? 'text-white/60' : 'text-gray-500'}`}`}>
+                  {d}
+                </button>
+              ))}
+            </div>
+            <textarea value={reportDetails} onChange={e => setReportDetails(e.target.value)}
+              placeholder={t.describe} rows={2}
+              className={`w-full px-4 py-2.5 rounded-2xl ${isDark ? 'bg-white/10 text-white' : 'bg-gray-200 text-gray-900'} text-sm resize-none mb-4`} />
+            <button onClick={submitReport}
+              className="w-full py-3 bg-red-600 text-white font-black rounded-2xl text-sm tracking-wide">
+              {t.submitReport}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── SETTINGS DRAWER ──────────────────────────────────────────────── */}
+      {showSettings && (
+        <div className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-sm flex items-end justify-center">
+          <div className={`w-full max-w-md ${surface} rounded-t-3xl p-5 max-h-[80vh] overflow-y-auto`}>
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="text-base font-bold">⚙️ {t.settings}</h3>
+              <button onClick={() => setShowSettings(false)} className="text-xl">✕</button>
+            </div>
+            {/* Language */}
+            <div className="mb-5">
+              <p className="text-xs font-bold mb-2 opacity-60">{t.language}</p>
+              <div className="flex gap-2">
+                {(['en', 'ar', 'fr'] as Language[]).map(l => (
+                  <button key={l} onClick={() => setLang(l)}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold ${lang === l ? 'bg-red-500 text-white' : 'bg-white/10'}`}>
+                    {l === 'en' ? 'English' : l === 'ar' ? 'عربي' : 'Français'}
                   </button>
                 ))}
               </div>
             </div>
-          </div>
-        </div>
-
-        <div className="absolute inset-0 z-0 h-[100dvh] w-full">
-          <MapComponent 
-            theme={!isOnline ? 'dark' : lowBandwidthMode ? 'dark' : theme} alerts={alerts} services={services} earthquakes={earthquakes} activeFilter={activeFilter} routePath={routePath} 
-            focusedAlertId={focusedAlertId} setFocusedAlertId={setFocusedAlertId} onBoundsChange={setMapBounds} 
-            isReportingMode={isReportingMode} onMapClick={handleMapClick} lowPowerMode={lowPowerMode || lowBandwidthMode || activeFilter === 'airstrike' || !isOnline}
-            searchLocation={searchLocation}
-            hospitalData={hospitalData}
-            updateAlert={updateAlert}
-            safeCheckIns={safeCheckIns}
-            districts={districts}
-          />
-          
-          {isReportingMode && (
-            <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
-              <div className="relative w-16 h-16">
-                <div className="absolute inset-0 border-4 border-danger rounded-full animate-ping" />
-                <div className="absolute top-1/2 left-0 w-full h-1 bg-danger" />
-                <div className="absolute left-1/2 top-0 w-1 h-full bg-danger" />
-              </div>
-            </div>
-          )}
-
-          {/* Floating SOS Button - Bottom Right */}
-          <div className="absolute bottom-24 right-4 z-[2500] pointer-events-auto">
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setIsSOSModalOpen(true)}
-              className="relative w-16 h-16 rounded-full bg-danger flex items-center justify-center shadow-2xl shadow-danger/40"
-            >
-              <div className="absolute inset-0 rounded-full bg-danger animate-ping opacity-30" />
-              <div className="absolute inset-[-4px] rounded-full border-2 border-danger/50 animate-pulse" />
-              <Phone className="w-7 h-7 text-black relative z-10" />
-            </motion.button>
-            <p className="text-center mt-1 text-[8px] font-black uppercase tracking-widest text-danger">SOS</p>
-          </div>
-
-          <BottomSheet 
-            theme={theme} t={t} isRTL={isRTL} districts={districts} 
-            startDistrict={startDistrict} setStartDistrict={setStartDistrict}
-            endDistrict={endDistrict} setEndDistrict={setEndDistrict}
-            getDistrictName={getDistrictName} calculateSafestRoute={calculateSafestRoute}
-            isRouting={isRouting} routePath={routePath} handleShare={handleShare}
-            filteredAlerts={filteredAlerts} focusedAlertId={focusedAlertId}
-            setFocusedAlertId={setFocusedAlertId} setIsReportModalOpen={setIsReportModalOpen}
-            setIsVideoCallOpen={setIsVideoCallOpen}
-            setIsSOSModalOpen={setIsSOSModalOpen}
-            safeCheckIns={safeCheckIns}
-            onSafeCheckIn={handleSafeCheckIn}
-            userSafeDistrict={userSafeDistrict}
-          />
-        </div>
-      </main>
-
-      <SOSModal 
-        isOpen={isSOSModalOpen} 
-        onClose={() => setIsSOSModalOpen(false)} 
-        t={t} isRTL={isRTL} theme={theme} 
-      />
-
-        {/* Settings Modal */}
-        <AnimatePresence>
-          {isSettingsOpen && (
-            <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsSettingsOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-xl" />
-              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`relative w-full max-w-md rounded-[2.5rem] border overflow-hidden shadow-2xl backdrop-blur-2xl ${theme === 'dark' ? 'bg-[#121212]/80 border-white/10' : 'bg-white/90 border-zinc-200'}`}>
-                <div className={`p-8 border-b border-white/10 flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <h2 className="text-xl font-bold">{t.settings}</h2>
-                  <button onClick={() => setIsSettingsOpen(false)} className="p-2 hover:bg-white/5 rounded-full"><X className="w-5 h-5" /></button>
-                </div>
-                <div className="p-8 space-y-8">
-                  <div className="space-y-4">
-                    <label className="text-xs font-black uppercase tracking-widest text-zinc-500">{t.language}</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(['en', 'ar', 'fr'] as Language[]).map(lang => (
-                        <button key={lang} onClick={() => setLanguage(lang)} className={`py-3 rounded-xl border font-bold transition-all ${language === lang ? 'bg-white text-black border-white' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}>{lang.toUpperCase()}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <label className="text-xs font-black uppercase tracking-widest text-zinc-500">{t.theme}</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button onClick={() => setTheme('dark')} className={`flex items-center justify-center gap-2 py-3 rounded-xl border font-bold transition-all ${theme === 'dark' ? 'bg-white text-black border-white' : 'bg-white/5 border-white/10'}`}><Moon className="w-4 h-4" />Dark</button>
-                      <button onClick={() => setTheme('light')} className={`flex items-center justify-center gap-2 py-3 rounded-xl border font-bold transition-all ${theme === 'light' ? 'bg-zinc-800 text-white border-zinc-800' : 'bg-white/5 border-white/10'}`}><Sun className="w-4 h-4" />Light</button>
-                    </div>
-                  </div>
-                  <div className={`flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                    <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <QrCode className="w-5 h-5 text-zinc-500" />
-                      <div className={isRTL ? 'text-right' : ''}><p className="text-sm font-bold">{t.shareApp}</p><p className="text-[10px] text-zinc-500">{t.offlineShare}</p></div>
-                    </div>
-                    <button onClick={() => setIsQRModalOpen(true)} className="bg-white text-black px-4 py-2 rounded-xl text-xs font-bold">{t.showQR}</button>
-                  </div>
-                  <div className={`flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                    <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <BatteryLow className={`w-5 h-5 ${lowPowerMode ? 'text-warning' : 'text-zinc-500'}`} />
-                      <div className={isRTL ? 'text-right' : ''}><p className="text-sm font-bold">{t.lowPower}</p><p className="text-[10px] text-zinc-500">{t.lowPowerDesc}</p></div>
-                    </div>
-                    <button onClick={() => setLowPowerMode(!lowPowerMode)} className={`w-12 h-6 rounded-full transition-all relative ${lowPowerMode ? 'bg-safety' : 'bg-zinc-700'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${lowPowerMode ? 'right-1' : 'left-1'}`} /></button>
-                  </div>
-                  {/* Low Bandwidth Mode Toggle */}
-                  <div className={`flex items-center justify-between p-4 rounded-2xl border ${lowBandwidthMode ? 'bg-warning/10 border-warning/30' : 'bg-white/5 border-white/10'} ${isRTL ? 'flex-row-reverse' : ''}`}>
-                    <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <WifiOff className={`w-5 h-5 ${lowBandwidthMode ? 'text-warning' : 'text-zinc-500'}`} />
-                      <div className={isRTL ? 'text-right' : ''}><p className="text-sm font-bold">{t.lowBandwidth}</p><p className="text-[10px] text-zinc-500">{t.optimized3G}</p></div>
-                    </div>
-                    <button onClick={() => setLowBandwidthMode(!lowBandwidthMode)} className={`w-12 h-6 rounded-full transition-all relative ${lowBandwidthMode ? 'bg-warning' : 'bg-zinc-700'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${lowBandwidthMode ? 'right-1' : 'left-1'}`} /></button>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* Report Modal */}
-        <AnimatePresence>
-          {isReportModalOpen && (
-            <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsReportModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-xl" />
-              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`relative w-full max-w-md rounded-[2.5rem] border overflow-hidden shadow-2xl backdrop-blur-2xl ${theme === 'dark' ? 'bg-[#121212]/80 border-white/10' : 'bg-white/90 border-zinc-200'}`}>
-                <div className={`p-8 border-b border-white/10 bg-danger/5 flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}><AlertTriangle className="text-danger w-6 h-6" /><h2 className="text-xl font-bold">{t.reportDanger}</h2></div>
-                  <button onClick={() => setIsReportModalOpen(false)} className="p-2 hover:bg-white/5 rounded-full"><X className="w-5 h-5" /></button>
-                </div>
-                <div className="p-8 space-y-6">
-                  <div className="space-y-3">
-                    <label className={`text-xs font-bold uppercase tracking-widest text-zinc-500 ${isRTL ? 'text-right block' : ''}`}>{t.dangerType}</label>
-                    <div className="grid grid-cols-1 gap-2">
-                      {DANGER_TYPES[language].map(type => (
-                        <button key={type} onClick={() => setSelectedDangerType(type)} className={`w-full p-4 rounded-2xl border font-bold transition-all ${isRTL ? 'text-right' : 'text-left'} ${selectedDangerType === type ? 'bg-danger text-black border-danger shadow-lg' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}>{type}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => { 
-                      const isAidRequest = selectedDangerType.includes('Aid') || selectedDangerType.includes('مساعدة') || selectedDangerType.includes('aide');
-                      const isAirstrike = selectedDangerType.includes('Airstrike') || selectedDangerType.includes('غارة') || selectedDangerType.includes('Frappe');
-                      addAlert({ 
-                        type: isAirstrike ? 'airstrike' : isAidRequest ? 'info' : 'danger', 
-                        location: 'User Reported', 
-                        districtId: 'dahieh', 
-                        message: selectedDangerType, 
-                        coordinates: [33.85, 35.50],
-                        isUserReported: true,
-                        timestamp: 'Just now'
-                      } as any); 
-                      setIsReportModalOpen(false); 
-                      setSelectedDangerType('');
-                    }} 
-                    disabled={!selectedDangerType} 
-                    className={`w-full py-4 rounded-2xl font-bold transition-all ${selectedDangerType ? 'bg-danger text-black shadow-lg' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}
-                  >
-                    {t.submitReport}
+            {/* Theme */}
+            <div className="mb-5">
+              <p className="text-xs font-bold mb-2 opacity-60">{t.theme}</p>
+              <div className="flex gap-2">
+                {(['dark', 'light'] as Theme[]).map(th => (
+                  <button key={th} onClick={() => setTheme(th)}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold ${theme === th ? 'bg-red-500 text-white' : 'bg-white/10'}`}>
+                    {th === 'dark' ? '🌙 Dark' : '☀️ Light'}
                   </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-      {/* QR Modal */}
-      <AnimatePresence>
-        {isQRModalOpen && (
-          <div className="fixed inset-0 z-[4000] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsQRModalOpen(false)} className="absolute inset-0 bg-black/90 backdrop-blur-xl" />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`relative p-8 rounded-[3rem] border flex flex-col items-center gap-6 ${theme === 'dark' ? 'bg-zinc-900 border-white/10' : 'bg-white border-zinc-200'}`}>
-              <h3 className="text-xl font-bold">{t.shareApp}</h3>
-              <div className="p-4 bg-white rounded-3xl">
-                <QRCodeCanvas value={window.location.href} size={200} level="H" />
+                ))}
               </div>
-              <p className="text-xs text-zinc-500 text-center max-w-[200px]">{t.scanQR}</p>
-              <button onClick={() => setIsQRModalOpen(false)} className="w-full py-4 rounded-2xl bg-zinc-800 text-white font-bold">{t.close}</button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-        {/* Welcome Toast (Safety Disclaimer) */}
-        <AnimatePresence>
-          {showWelcome && (
-            <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4">
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-              <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }} className={`relative w-full max-w-md p-8 rounded-[3rem] border shadow-2xl ${theme === 'dark' ? 'bg-zinc-900 border-white/10' : 'bg-white border-zinc-200'}`}>
-                <div className={`flex items-center gap-4 mb-6 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className="bg-danger/20 p-3 rounded-2xl"><ShieldCheck className="text-danger w-8 h-8" /></div>
-                  <div className={isRTL ? 'text-right' : ''}><h2 className="text-2xl font-black tracking-tight">{t.safetyDisclaimerTitle}</h2><p className="text-xs text-zinc-500 uppercase font-bold tracking-widest">{t.safetyStatus}</p></div>
-                </div>
-                <p className={`text-sm leading-relaxed text-zinc-400 mb-8 ${isRTL ? 'text-right' : ''}`}>{t.safetyDisclaimerMessage}</p>
-                <button onClick={dismissWelcome} className="w-full py-4 rounded-2xl bg-danger text-black font-black uppercase tracking-widest text-xs shadow-lg shadow-danger/20">{t.understand}</button>
-              </motion.div>
             </div>
-          )}
-        </AnimatePresence>
+            {/* Toggles */}
+            <div className="space-y-3 mb-5">
+              <label className={`flex items-center justify-between p-3 rounded-2xl ${isDark ? 'bg-white/5' : 'bg-gray-50'}`}>
+                <div>
+                  <p className="text-xs font-bold">{t.lowBandwidth}</p>
+                  <p className="text-[10px] opacity-50">{t.optimized3G}</p>
+                </div>
+                <input type="checkbox" checked={lowBandwidth} onChange={e => setLowBandwidth(e.target.checked)}
+                  className="w-5 h-5 accent-red-500" />
+              </label>
+              <label className={`flex items-center justify-between p-3 rounded-2xl ${isDark ? 'bg-white/5' : 'bg-gray-50'}`}>
+                <div>
+                  <p className="text-xs font-bold">{t.lowPower}</p>
+                  <p className="text-[10px] opacity-50">{t.lowPowerDesc}</p>
+                </div>
+                <input type="checkbox" checked={lowPower} onChange={e => setLowPower(e.target.checked)}
+                  className="w-5 h-5 accent-red-500" />
+              </label>
+            </div>
+            {/* QR + Share */}
+            <div className="flex gap-2 mb-4">
+              <button onClick={() => { setShowQR(true); setShowSettings(false); }}
+                className="flex-1 py-2.5 bg-white/10 rounded-2xl text-xs font-bold">{t.showQR}</button>
+              <button onClick={handleIAmSafe}
+                className="flex-1 py-2.5 bg-green-600 text-white rounded-2xl text-xs font-bold">{t.iAmSafe}</button>
+            </div>
+            <button onClick={() => setShowSettings(false)}
+              className="w-full py-3 bg-red-600 text-white font-black rounded-2xl text-sm">{t.close}</button>
+          </div>
+        </div>
+      )}
 
-        {/* Video Call Modal */}
-        <AnimatePresence>
-          {isVideoCallOpen && (
-            <div className="fixed inset-0 z-[6000] flex items-center justify-center p-0 sm:p-4">
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/95 backdrop-blur-xl" />
-              <motion.div 
-                initial={{ scale: 0.95, opacity: 0, y: 20 }} 
-                animate={{ scale: 1, opacity: 1, y: 0 }} 
-                exit={{ scale: 0.95, opacity: 0, y: 20 }} 
-                className="relative w-full h-full sm:max-w-5xl sm:h-[80vh] bg-black rounded-none sm:rounded-[3rem] border-none sm:border border-white/10 overflow-hidden flex flex-col shadow-2xl"
-              >
-                <div className="p-4 sm:p-6 border-b border-white/10 flex justify-between items-center bg-zinc-900/50">
+      {/* ─── EMERGENCY PANEL ──────────────────────────────────────────────── */}
+      {showEmergency && (
+        <div className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-sm flex items-end justify-center">
+          <div className={`w-full max-w-md ${surface} rounded-t-3xl p-5`}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-base font-bold text-red-500">🆘 {t.emergencyContacts}</h3>
+              <button onClick={() => setShowEmergency(false)} className="text-xl">✕</button>
+            </div>
+            <div className="space-y-2 mb-4">
+              {EMERGENCY_CONTACTS.map((c, i) => (
+                <a key={i} href={`tel:${c.number}`}
+                  className={`flex items-center justify-between p-4 rounded-2xl ${isDark ? 'bg-red-500/10' : 'bg-red-50'} border border-red-500/20`}>
                   <div className="flex items-center gap-3">
-                    <div className="bg-indigo-500 p-2 rounded-xl"><Video className="w-5 h-5 text-black" /></div>
+                    <span className="text-2xl">{c.icon}</span>
                     <div>
-                      <h2 className="text-sm sm:text-lg font-black uppercase tracking-tight text-white">{t.emergencyVideoCall}</h2>
-                      <p className="text-[8px] sm:text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{jitsiRoomId}</p>
+                      <p className="font-bold text-sm">{lang === 'ar' ? c.nameAr : lang === 'fr' ? c.nameFr : c.name}</p>
+                      <p className="text-xs opacity-60">{c.number}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <motion.button 
-                      whileTap={{ scale: 0.9 }} 
-                      onClick={handleShareVideoCall}
-                      className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold uppercase tracking-widest transition-all"
-                    >
-                      <Share2 className="w-3 h-3 sm:w-4 h-4" />
-                      <span className="hidden sm:inline">{t.shareCallLink}</span>
-                    </motion.button>
-                    <motion.button 
-                      whileTap={{ scale: 0.9 }} 
-                      onClick={() => setIsVideoCallOpen(false)}
-                      className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-danger text-black text-[10px] font-bold uppercase tracking-widest transition-all"
-                    >
-                      <X className="w-3 h-3 sm:w-4 h-4" />
-                      <span>{t.hangUp}</span>
-                    </motion.button>
-                  </div>
-                </div>
-                <div className="flex-1 bg-black relative">
-                  <JitsiMeeting
-                    domain="meet.jit.si"
-                    roomName={jitsiRoomId}
-                    configOverwrite={{
-                      startWithAudioMuted: false,
-                      disableModeratorIndicator: true,
-                      startScreenSharing: false,
-                      enableEmailInStats: false,
-                      prejoinPageEnabled: false,
-                    }}
-                    interfaceConfigOverwrite={{
-                      DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
-                    }}
-                    userInfo={{
-                      displayName: `Guardian User (${language.toUpperCase()})`,
-                      email: ''
-                    }}
-                    getIFrameRef={(iframeRef) => {
-                      iframeRef.style.height = '100%';
-                      iframeRef.style.width = '100%';
-                    }}
-                  />
-                </div>
-              </motion.div>
+                  <span className="text-2xl">📞</span>
+                </a>
+              ))}
             </div>
-          )}
-        </AnimatePresence>
+            <button onClick={shareLocation}
+              className="w-full py-3 bg-green-600 text-white font-bold rounded-2xl text-sm mb-2">
+              📍 {t.shareLocation}
+            </button>
+            <button onClick={() => setShowEmergency(false)}
+              className="w-full py-2.5 bg-white/10 rounded-2xl text-xs font-bold">{t.close}</button>
+          </div>
+        </div>
+      )}
 
-        {/* Safe Path Calculated Toast */}
-        <AnimatePresence>
-          {safeRouteToast && routeInfo && (
-            <motion.div 
-              initial={{ y: 60, opacity: 0, scale: 0.9 }} 
-              animate={{ y: 0, opacity: 1, scale: 1 }} 
-              exit={{ y: 60, opacity: 0, scale: 0.9 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className={`fixed bottom-28 left-1/2 -translate-x-1/2 z-[4000] backdrop-blur-2xl rounded-3xl border shadow-2xl px-6 py-4 flex items-center gap-4 max-w-sm ${theme === 'dark' ? 'bg-[#121212]/80 border-safety/30' : 'bg-white/90 border-safety/40'}`}
-            >
-              <div className="p-2.5 rounded-2xl bg-safety/20">
-                <ShieldCheck className="w-6 h-6 text-safety" />
-              </div>
-              <div>
-                <p className="text-sm font-black uppercase tracking-tight text-safety">{t.safePathFound}</p>
-                <p className="text-[10px] text-zinc-500 font-bold">
-                  {routeInfo.duration} {t.minutes} · {routeInfo.dangersAvoided} {t.dangerAvoided}
-                </p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      {/* ─── QR MODAL ─────────────────────────────────────────────────────── */}
+      {showQR && (
+        <div className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-sm flex items-center justify-center"
+          onClick={() => setShowQR(false)}>
+          <div className={`${surface} rounded-3xl p-6 text-center max-w-xs`} onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-bold mb-3">📲 {t.showQR}</h3>
+            <div className="bg-white p-4 rounded-2xl inline-block mb-3">
+              <QRCodeSVG value={window.location.href} size={200} />
+            </div>
+            <p className="text-[10px] opacity-50 mb-3">{t.scanQR}</p>
+            <button onClick={() => { navigator.clipboard.writeText(window.location.href); setToast(t.shareSuccess); setShowQR(false); }}
+              className="w-full py-2.5 bg-red-600 text-white font-bold rounded-2xl text-xs">{t.shareApp}</button>
+          </div>
+        </div>
+      )}
 
-        {/* Low Bandwidth Active Banner */}
-        <AnimatePresence>
-          {lowBandwidthMode && (
-            <motion.div 
-              initial={{ y: -30, opacity: 0 }} 
-              animate={{ y: 0, opacity: 1 }} 
-              exit={{ y: -30, opacity: 0 }}
-              className="fixed top-16 left-1/2 -translate-x-1/2 z-[3500] bg-warning/90 text-black px-5 py-2 rounded-full font-black text-[10px] uppercase tracking-widest shadow-xl flex items-center gap-2"
-            >
-              <WifiOff className="w-3.5 h-3.5" />{t.lowBandwidthActive}
-            </motion.div>
-          )}
-        </AnimatePresence>
+      {/* ─── LOW BANDWIDTH OVERLAY ────────────────────────────────────────── */}
+      {lowBandwidth && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[500] pointer-events-none">
+          <p className="text-white/20 text-center text-xs font-bold tracking-widest">{t.lowBandwidthActive}</p>
+        </div>
+      )}
 
-        {/* Share Toast */}
-        <AnimatePresence>
-          {shareToast && (
-            <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className={`fixed bottom-8 ${isRTL ? 'left-8' : 'right-8'} z-[4000] bg-safety text-black px-6 py-3 rounded-full font-bold shadow-2xl flex items-center gap-2`}>
-              <CheckCircle2 className="w-5 h-5" />{t.shareSuccess}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </LanguageContext.Provider>
+      {/* ─── TOAST ────────────────────────────────────────────────────────── */}
+      {toast && (
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[3000] px-5 py-2.5 bg-green-600 text-white text-xs font-bold rounded-2xl shadow-lg animate-bounce">
+          {toast}
+        </div>
+      )}
+    </div>
   );
 }
