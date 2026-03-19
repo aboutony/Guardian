@@ -12,6 +12,10 @@ export const DEFAULT_ZOOM = 8;
 export const SAFETY_BUFFER_METERS = 500;
 export const OSRM_BASE_URL = 'https://router.project-osrm.org/route/v1/driving';
 
+// ─── Tile Layer URLs ─────────────────────────────────────────────────────────
+export const MAP_TILE_URL_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+export const MAP_TILE_URL_LIGHT = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
 // Bounding box for Lebanon — constrains map pan area
 export const LEBANON_BOUNDS: [[number, number], [number, number]] = [
   [32.8, 34.8],  // SW corner

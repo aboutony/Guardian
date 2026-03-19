@@ -7,7 +7,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import {
   TRANSLATIONS, DANGER_TYPES, DISTRICT_COORDINATES, LEBANON_CENTER, LEBANON_BOUNDS,
   DEFAULT_ZOOM, SAFETY_BUFFER_METERS, OSRM_BASE_URL, FILTER_CATEGORIES, SERVICE_ICONS,
-  HOSPITAL_FALLBACK, EMERGENCY_CONTACTS,
+  HOSPITAL_FALLBACK, EMERGENCY_CONTACTS, MAP_TILE_URL_DARK, MAP_TILE_URL_LIGHT,
   type Language, type Theme
 } from './constants';
 import { useSafetyData, type Alert, type EssentialService } from './data/safetyData';
@@ -33,8 +33,14 @@ function MapController({ center, zoom }: { center: [number, number]; zoom: numbe
     if (isInitial.current) { isInitial.current = false; return; }
     map.flyTo(center, zoom, { duration: 1 });
   }, [center, zoom, map]);
-  // Force Leaflet to recalculate size after mount (fixes 0-height bug)
-  useEffect(() => { setTimeout(() => map.invalidateSize(), 200); }, [map]);
+  // Force Leaflet to recalculate after modular load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+      window.dispatchEvent(new Event('resize'));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [map]);
   return null;
 }
 
@@ -250,13 +256,12 @@ export default function App() {
         maxBounds={LEBANON_BOUNDS} maxBoundsViscosity={0.8}
         zoomControl={false} attributionControl={false}>
         <MapController center={mapCenter} zoom={mapZoom} />
-        {!lowBandwidth && (
-          <TileLayer
-            url={isDark
-              ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-              : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'}
-            zIndex={1} />
-        )}
+        {/* TileLayer always rendered — lowBandwidth hides via opacity, never unmounts */}
+        <TileLayer
+          url={isDark ? MAP_TILE_URL_DARK : MAP_TILE_URL_LIGHT}
+          zIndex={1}
+          opacity={lowBandwidth ? 0 : 1}
+        />
         {/* User location */}
         {userLocation && <Marker position={userLocation} icon={ICONS.user}>
           <Popup><strong>📍 {t.shareLocation}</strong></Popup>
