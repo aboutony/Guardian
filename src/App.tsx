@@ -1,30 +1,46 @@
-// App.tsx — Guardian Lebanon — Modular Recovery Build
-// All static data imported from ./constants | Hook/data from ./data/safetyData
+// App.tsx — Guardian Lebanon — Full Re-Wire Build
+// All static data & category arrays imported from ./constants
+// Dynamic hooks from ./data/safetyData
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   TRANSLATIONS, DANGER_TYPES, DISTRICT_COORDINATES, LEBANON_CENTER, LEBANON_BOUNDS,
-  DEFAULT_ZOOM, SAFETY_BUFFER_METERS, OSRM_BASE_URL, FILTER_CATEGORIES, SERVICE_ICONS,
-  HOSPITAL_FALLBACK, EMERGENCY_CONTACTS, MAP_TILE_URL_DARK, MAP_TILE_URL_LIGHT,
-  type Language, type Theme
+  DEFAULT_ZOOM, SAFETY_BUFFER_METERS, OSRM_BASE_URL, FILTER_CATEGORIES,
+  MAP_TILE_URL_DARK, MAP_TILE_URL_LIGHT, EMERGENCY_CONTACTS,
+  HOSPITALS, AIRSTRIKES, BAKERIES, PHARMACIES, FUEL_STATIONS, NGOS, ROAD_BLOCKS,
+  CATEGORY_DATA,
+  type Language, type Theme, type MarkerPoint,
 } from './constants';
-import { useSafetyData, type Alert, type EssentialService } from './data/safetyData';
+import { useSafetyData, type Alert } from './data/safetyData';
 
 // ─── Leaflet Icon Factories (colored circle backgrounds for visibility) ──────
 const makeIcon = (emoji: string, bg: string, size = 36) => L.divIcon({
   html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.3)"><span style="font-size:${Math.round(size * 0.5)}px;line-height:1">${emoji}</span></div>`,
   className: 'marker-animate', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
 });
+
 const ICONS: Record<string, L.DivIcon> = {
-  danger: makeIcon('💥', '#dc2626'), warning: makeIcon('⚠️', '#d97706'),
-  airstrike: makeIcon('💥', '#dc2626', 40), road_closure: makeIcon('🚧', '#ea580c'),
-  hospital: makeIcon('🏥', '#2563eb'), bakery: makeIcon('🍞', '#a16207'),
-  pharmacy: makeIcon('💊', '#7c3aed'), fuel: makeIcon('⛽', '#059669'),
-  ngo: makeIcon('🤝', '#0891b2'), tools: makeIcon('🔧', '#6b7280'),
-  food_water: makeIcon('🍲', '#16a34a'), user: makeIcon('📍', '#3b82f6', 40),
-  info: makeIcon('ℹ️', '#6b7280', 30),
+  airstrike: makeIcon('💥', '#dc2626', 40),
+  hospital: makeIcon('🏥', '#2563eb'),
+  bakery: makeIcon('🍞', '#a16207'),
+  pharmacy: makeIcon('💊', '#7c3aed'),
+  fuel: makeIcon('⛽', '#059669'),
+  ngo: makeIcon('🤝', '#0891b2'),
+  road_block: makeIcon('🚧', '#ea580c'),
+  user: makeIcon('📍', '#3b82f6', 40),
+};
+
+// Icon lookup by category ID
+const CATEGORY_ICON: Record<string, L.DivIcon> = {
+  airstrikes: ICONS.airstrike,
+  hospitals: ICONS.hospital,
+  bakeries: ICONS.bakery,
+  pharmacies: ICONS.pharmacy,
+  fuel: ICONS.fuel,
+  ngo: ICONS.ngo,
+  road_status: ICONS.road_block,
 };
 
 // ─── MapController — flies to coords on change (skips initial mount) ─────────
@@ -35,7 +51,6 @@ function MapController({ center, zoom }: { center: [number, number]; zoom: numbe
     if (isInitial.current) { isInitial.current = false; return; }
     map.flyTo(center, zoom, { duration: 1 });
   }, [center, zoom, map]);
-  // Force Leaflet to recalculate at two intervals for reliability
   useEffect(() => {
     const t1 = setTimeout(() => { map.invalidateSize(); }, 100);
     const t2 = setTimeout(() => {
@@ -47,15 +62,13 @@ function MapController({ center, zoom }: { center: [number, number]; zoom: numbe
   return null;
 }
 
-// ─── Haversine distance (meters) ─────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 function haversine(a: [number, number], b: [number, number]): number {
   const R = 6371000, toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(b[0] - a[0]), dLon = toRad(b[1] - a[1]);
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
-
-// ─── Time-ago helper ─────────────────────────────────────────────────────────
 function timeAgo(ts: number): string {
   const s = Math.floor((Date.now() - ts) / 1000);
   if (s < 60) return `${s}s`;
@@ -68,13 +81,12 @@ function timeAgo(ts: number): string {
 //  MAIN APP COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  // ── Data hook ──────────────────────────────────────────────────────────────
-  const { districts, alerts, services, safeCheckIns, addAlert, updateAlert, addSafeCheckIn, locations } = useSafetyData();
+  const { alerts, addAlert, updateAlert, safeCheckIns, addSafeCheckIn, locations } = useSafetyData();
 
   // ── UI state ───────────────────────────────────────────────────────────────
   const [lang, setLang] = useState<Language>(() => (localStorage.getItem('guardian-lang') as Language) || 'en');
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('guardian-theme') as Theme) || 'dark');
-  const [activeFilter, setActiveFilter] = useState('all');
+  const [activeCategory, setActiveCategory] = useState('all');
   const [showReport, setShowReport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showRouting, setShowRouting] = useState(false);
@@ -120,11 +132,9 @@ export default function App() {
     );
   }, []);
 
-  // ── Hard resize: force Leaflet container recalculation after app mount ────
+  // ── Hard resize for Leaflet container recalculation ────────────────────────
   useEffect(() => {
-    const timer = setTimeout(() => {
-      window.dispatchEvent(new Event('resize'));
-    }, 500);
+    const timer = setTimeout(() => { window.dispatchEvent(new Event('resize')); }, 500);
     return () => clearTimeout(timer);
   }, []);
 
@@ -135,139 +145,104 @@ export default function App() {
     return () => clearTimeout(id);
   }, [toast]);
 
-  // ── Filtered markers ──────────────────────────────────────────────────────
-  const filteredAlerts = useMemo(() => {
-    if (activeFilter === 'all') return alerts;
-    if (activeFilter === 'airstrikes') return alerts.filter(a => a.type === 'danger' || a.type === 'airstrike');
-    if (activeFilter === 'road_status') return alerts.filter(a => a.type === 'road_closure');
-    return [];
-  }, [alerts, activeFilter]);
+  // ── Active markers based on category ───────────────────────────────────────
+  const activeMarkers: MarkerPoint[] = useMemo(() => {
+    if (activeCategory === 'all') {
+      return [...HOSPITALS, ...AIRSTRIKES, ...BAKERIES, ...PHARMACIES, ...FUEL_STATIONS, ...NGOS, ...ROAD_BLOCKS];
+    }
+    return CATEGORY_DATA[activeCategory] || [];
+  }, [activeCategory]);
 
-  const filteredServices = useMemo(() => {
-    if (activeFilter === 'all') return services;
-    const svcMap: Record<string, string> = { hospitals: 'hospital', bakeries: 'bakery', pharmacies: 'pharmacy', fuel: 'fuel', ngo: 'ngo' };
-    const svcType = svcMap[activeFilter];
-    return svcType ? services.filter(s => s.type === svcType) : [];
-  }, [services, activeFilter]);
-
-  // ── Auto-zoom to filtered markers when filter changes ─────────────────────
+  // ── Auto-zoom when category changes ────────────────────────────────────────
   useEffect(() => {
-    if (activeFilter === 'all') {
+    if (activeCategory === 'all') {
       setMapCenter(LEBANON_CENTER);
       setMapZoom(DEFAULT_ZOOM);
       return;
     }
-    // Collect all visible marker coords
-    const coords: [number, number][] = [
-      ...filteredAlerts.map(a => a.coordinates),
-      ...filteredServices.map(s => s.coordinates),
-      ...(activeFilter === 'hospitals' ? HOSPITAL_FALLBACK.map(h => h.coordinates) : []),
-    ];
-    if (coords.length > 0) {
-      const avgLat = coords.reduce((s, c) => s + c[0], 0) / coords.length;
-      const avgLng = coords.reduce((s, c) => s + c[1], 0) / coords.length;
+    const points = CATEGORY_DATA[activeCategory];
+    if (points && points.length > 0) {
+      const avgLat = points.reduce((s, p) => s + p.coordinates[0], 0) / points.length;
+      const avgLng = points.reduce((s, p) => s + p.coordinates[1], 0) / points.length;
       setMapCenter([avgLat, avgLng]);
-      setMapZoom(coords.length === 1 ? 13 : 10);
+      setMapZoom(points.length === 1 ? 13 : 10);
     }
-  }, [activeFilter, filteredAlerts, filteredServices]);
+  }, [activeCategory]);
 
   // ── Search results ─────────────────────────────────────────────────────────
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase();
-    return locations.filter(l =>
+    return locations.filter((l: any) =>
       l.name.toLowerCase().includes(q) || l.ar.includes(q) || (l.fr && l.fr.toLowerCase().includes(q))
     ).slice(0, 5);
   }, [searchQuery, locations]);
 
   // ── Feed items (filtered + sorted) ────────────────────────────────────────
   const feedItems = useMemo(() => {
-    let items = [...alerts].sort((a, b) => b.createdAt - a.createdAt);
+    let items = [...alerts];
     if (feedFilter === 'airstrikes') items = items.filter(a => a.type === 'danger' || a.type === 'airstrike');
     if (feedFilter === 'roads') items = items.filter(a => a.type === 'road_closure');
-    return items.slice(0, 20);
+    return items.sort((a, b) => b.createdAt - a.createdAt).slice(0, 50);
   }, [alerts, feedFilter]);
 
-  // ── OSRM Route calculation with 500m safety buffer ────────────────────────
+  // ── Route calculation with safety buffer ──────────────────────────────────
   const calculateRoute = useCallback(async () => {
     if (!routeStart || !routeEnd) return;
-    const start = DISTRICT_COORDINATES[routeStart];
-    const end = DISTRICT_COORDINATES[routeEnd];
-    if (!start || !end) return;
     setIsRouting(true);
     try {
-      const url = `${OSRM_BASE_URL}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
-      const res = await fetch(url);
+      const startCoord = DISTRICT_COORDINATES[routeStart];
+      const endCoord = DISTRICT_COORDINATES[routeEnd];
+      if (!startCoord || !endCoord) { setIsRouting(false); return; }
+      const res = await fetch(`${OSRM_BASE_URL}/${startCoord[1]},${startCoord[0]};${endCoord[1]},${endCoord[0]}?overview=full&geometries=geojson`);
       const data = await res.json();
       if (data.routes?.[0]) {
-        const rawCoords: [number, number][] = data.routes[0].geometry.coordinates.map(
-          (c: number[]) => [c[1], c[0]] as [number, number]
-        );
-        // 500m safety buffer: shift route points near danger zones
-        const dangerZones = alerts.filter(a => a.type === 'danger' || a.type === 'airstrike').map(a => a.coordinates);
-        const safeCoords = rawCoords.map(point => {
-          for (const dz of dangerZones) {
-            if (haversine(point, dz) < SAFETY_BUFFER_METERS) {
-              const bearing = Math.atan2(point[1] - dz[1], point[0] - dz[0]);
-              const offset = SAFETY_BUFFER_METERS / 111320;
-              return [point[0] + Math.cos(bearing) * offset, point[1] + Math.sin(bearing) * offset] as [number, number];
-            }
-          }
-          return point;
+        const coords: [number, number][] = data.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+        const dangerZones = AIRSTRIKES.map(a => a.coordinates);
+        let avoided = 0;
+        const safeCoords = coords.filter(c => {
+          const nearDanger = dangerZones.some(dz => haversine(c, dz) < SAFETY_BUFFER_METERS);
+          if (nearDanger) avoided++;
+          return !nearDanger;
         });
-        const avoided = dangerZones.filter(dz => rawCoords.some(p => haversine(p, dz) < SAFETY_BUFFER_METERS)).length;
-        setRouteCoords(safeCoords);
+        setRouteCoords(safeCoords.length > 2 ? safeCoords : coords);
         setRouteInfo({ duration: Math.round(data.routes[0].duration / 60), dangerAvoided: avoided });
-        setToast(`${t.safePathFound} ✓`);
-        setMapCenter(start);
-        setMapZoom(10);
+        setToast(`✅ ${t.routeFound} — ${avoided} ${t.dangerAvoided}`);
       }
-    } catch (err) {
-      console.error('Route calculation failed:', err);
-      setToast('Route calculation failed');
-    }
+    } catch { setToast('⚠️ Route error'); }
     setIsRouting(false);
-  }, [routeStart, routeEnd, alerts, t]);
+  }, [routeStart, routeEnd, t]);
 
   // ── Submit report ──────────────────────────────────────────────────────────
   const submitReport = useCallback(() => {
-    const coord: [number, number] = userLocation || LEBANON_CENTER;
-    const nearestDistrict = districts.reduce((nearest, d) => {
-      const dCenter: [number, number] = [(d.bounds[0][0] + d.bounds[1][0]) / 2, (d.bounds[0][1] + d.bounds[1][1]) / 2];
-      const dist = haversine(coord, dCenter);
-      return dist < nearest.dist ? { id: d.id, dist } : nearest;
-    }, { id: 'beirut', dist: Infinity });
+    const dt = DANGER_TYPES[reportType];
+    const coords: [number, number] = userLocation || LEBANON_CENTER;
     addAlert({
-      type: reportType <= 1 ? 'danger' : reportType === 4 ? 'info' : 'warning',
-      location: DANGER_TYPES[lang][reportType],
-      districtId: nearestDistrict.id,
-      message: reportDetails || DANGER_TYPES[lang][reportType],
+      type: dt.type === 'road_closure' ? 'road_closure' : 'danger',
+      location: `User Report — ${dt.en}`,
+      districtId: 'beirut',
+      message: reportDetails || dt.en,
       createdAt: Date.now(),
-      coordinates: coord,
+      coordinates: coords,
       isUserReported: true,
     });
     setShowReport(false);
     setReportDetails('');
-    setToast(`${t.report} ✓`);
-  }, [userLocation, reportType, reportDetails, lang, t, districts, addAlert]);
+    setToast(t.submitted);
+  }, [reportType, reportDetails, userLocation, addAlert, t]);
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  const shareLocation = useCallback(() => {
-    if (!userLocation) return;
-    const url = `https://wa.me/?text=${encodeURIComponent(t.whatsappMessage + `https://maps.google.com/?q=${userLocation[0]},${userLocation[1]}`)}`;
-    window.open(url, '_blank');
-  }, [userLocation, t]);
-
-  const handleIAmSafe = useCallback(() => {
-    if (!userLocation) return;
-    const nearest = districts.reduce((n, d) => {
-      const c: [number, number] = [(d.bounds[0][0] + d.bounds[1][0]) / 2, (d.bounds[0][1] + d.bounds[1][1]) / 2];
-      const dist = haversine(userLocation, c);
-      return dist < n.dist ? { id: d.id, dist } : n;
-    }, { id: 'beirut', dist: Infinity });
-    addSafeCheckIn(nearest.id);
-    setToast(`${t.iAmSafe} ✓`);
-  }, [userLocation, districts, addSafeCheckIn, t]);
+  // ── Icon resolver for markers ──────────────────────────────────────────────
+  const getMarkerIcon = (marker: MarkerPoint): L.DivIcon => {
+    if (activeCategory !== 'all') return CATEGORY_ICON[activeCategory] || ICONS.ngo;
+    // In "All" mode, determine icon by category membership
+    if (HOSPITALS.some(h => h.id === marker.id)) return ICONS.hospital;
+    if (AIRSTRIKES.some(a => a.id === marker.id)) return ICONS.airstrike;
+    if (BAKERIES.some(b => b.id === marker.id)) return ICONS.bakery;
+    if (PHARMACIES.some(p => p.id === marker.id)) return ICONS.pharmacy;
+    if (FUEL_STATIONS.some(f => f.id === marker.id)) return ICONS.fuel;
+    if (ROAD_BLOCKS.some(r => r.id === marker.id)) return ICONS.road_block;
+    return ICONS.ngo;
+  };
 
   // ── Theme classes ──────────────────────────────────────────────────────────
   const bg = isDark ? 'bg-[#121212]' : 'bg-white';
@@ -288,7 +263,7 @@ export default function App() {
         maxBounds={LEBANON_BOUNDS} maxBoundsViscosity={0.8}
         zoomControl={false} attributionControl={false}>
         <MapController center={mapCenter} zoom={mapZoom} />
-        {/* TileLayer ALWAYS visible — never conditional, never opacity:0 */}
+        {/* TileLayer ALWAYS rendered — no conditional wrapper */}
         <TileLayer
           url={isDark ? MAP_TILE_URL_DARK : MAP_TILE_URL_LIGHT}
           zIndex={1}
@@ -297,51 +272,17 @@ export default function App() {
         {userLocation && <Marker position={userLocation} icon={ICONS.user}>
           <Popup><strong>📍 {t.shareLocation}</strong></Popup>
         </Marker>}
-        {/* Alerts */}
-        {filteredAlerts.map(a => (
-          <Marker key={a.id} position={a.coordinates} icon={ICONS[a.type] || ICONS.warning}>
-            <Popup>
-              <div className="text-xs min-w-[180px]">
-                <strong>{a.location}</strong>
-                <p className="mt-1 opacity-80">{a.message}</p>
-                <div className="mt-2 flex items-center gap-2 text-[10px]">
-                  <span>{a.verified ? t.nnaVerified : t.communityReport}</span>
-                  <span>• {timeAgo(a.createdAt)}</span>
-                </div>
-                {a.type === 'road_closure' && (
-                  <div className="mt-2 flex gap-1">
-                    <button onClick={() => updateAlert(a.id, { verificationCount: (a.verificationCount || 0) + 1 })}
-                      className="px-2 py-1 bg-red-600 text-white rounded text-[10px]">{t.stillClosed}</button>
-                    <button onClick={() => updateAlert(a.id, { roadOpen: true })}
-                      className="px-2 py-1 bg-green-600 text-white rounded text-[10px]">{t.roadNowOpen}</button>
-                  </div>
-                )}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-        {/* Services */}
-        {filteredServices.map(s => (
-          <Marker key={s.id} position={s.coordinates} icon={ICONS[s.type] || ICONS.info}>
+        {/* Category markers — directly from CATEGORY_DATA */}
+        {activeMarkers.map(marker => (
+          <Marker key={marker.id} position={marker.coordinates} icon={getMarkerIcon(marker)}>
             <Popup>
               <div className="text-xs min-w-[160px]">
-                <strong>{SERVICE_ICONS[s.type]} {s.name}</strong>
-                <p className={`mt-1 font-bold ${s.status === 'open' ? 'text-green-500' : s.status === 'limited' ? 'text-yellow-500' : 'text-red-500'}`}>
-                  {s.status === 'open' ? t.operational : s.status === 'limited' ? t.limited : t.closed}
-                </p>
-                {s.hours && <p className="mt-1 opacity-70">{t.hours}: {s.hours}</p>}
-                {s.type === 'hospital' && <a href="tel:140" className="block mt-2 text-red-400 font-bold">{t.lrcEmergency}</a>}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-        {/* Hospital fallback markers */}
-        {(activeFilter === 'all' || activeFilter === 'hospitals') && HOSPITAL_FALLBACK.map((h, i) => (
-          <Marker key={`hf-${i}`} position={h.coordinates} icon={ICONS.hospital}>
-            <Popup>
-              <div className="text-xs">
-                <strong>🏥 {h.name}</strong>
-                <a href={`tel:${h.phone}`} className="block mt-1 text-blue-400 font-bold">📞 {h.phone}</a>
+                <strong>{marker.name}</strong>
+                {marker.message && <p className="mt-1 text-gray-600">{marker.message}</p>}
+                {marker.status && <span className={`block mt-1 ${marker.status === 'open' ? 'text-green-500' : 'text-red-500'}`}>{marker.status === 'open' ? t.open : t.closed}</span>}
+                {marker.hours && <span className="block text-gray-400">🕐 {marker.hours}</span>}
+                {marker.phone && <a href={`tel:${marker.phone}`} className="block mt-1 text-blue-400 font-bold">📞 {marker.phone}</a>}
+                {marker.verified && <span className="block mt-1 text-green-400">{t.verified} ({marker.verificationCount})</span>}
               </div>
             </Popup>
           </Marker>
@@ -364,9 +305,9 @@ export default function App() {
         {/* Filter chips */}
         <div className="flex gap-1.5 px-3 pb-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {FILTER_CATEGORIES.map(f => (
-            <button key={f.id} onClick={() => setActiveFilter(f.id)}
+            <button key={f.id} onClick={() => setActiveCategory(f.id)}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
-                activeFilter === f.id
+                activeCategory === f.id
                   ? 'bg-red-500 text-white ring-2 ring-red-400 ring-offset-1 ring-offset-black shadow-[0_0_12px_rgba(239,68,68,0.5)]'
                   : `${isDark ? 'bg-white/10 text-white/70 hover:bg-white/20' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`
               }`}>
@@ -378,15 +319,15 @@ export default function App() {
 
       {/* ─── SEARCH BAR ───────────────────────────────────────────────────── */}
       <div className="absolute top-[88px] left-3 right-3 z-[1000]">
-        <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+        <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
           placeholder={t.searchPlaceholder}
-          className={`w-full px-4 py-2.5 rounded-2xl ${surface}/90 backdrop-blur-xl ${textMain} text-sm border ${border} outline-none`} />
+          className={`w-full px-4 py-2.5 rounded-xl ${surface}/90 backdrop-blur-md ${textMain} placeholder:${textSub} border ${border} text-sm`} />
         {searchResults.length > 0 && (
-          <div className={`mt-1 rounded-2xl ${surface}/95 backdrop-blur-xl border ${border} overflow-hidden`}>
-            {searchResults.map((r, i) => (
-              <button key={i} onClick={() => { setMapCenter(r.coords as [number, number]); setMapZoom(14); setSearchQuery(''); }}
-                className={`w-full text-left px-4 py-2.5 text-sm ${textMain} hover:bg-white/10 border-b ${border} last:border-0`}>
-                📍 {lang === 'ar' ? r.ar : r.name}
+          <div className={`mt-1 ${surface} rounded-xl border ${border} overflow-hidden shadow-2xl`}>
+            {searchResults.map((r: any, i: number) => (
+              <button key={i} onClick={() => { setMapCenter(r.coords); setMapZoom(14); setSearchQuery(''); }}
+                className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 border-b ${border}`}>
+                📍 {r.name} <span className={textSub}>— {r.ar}</span>
               </button>
             ))}
           </div>
@@ -394,243 +335,202 @@ export default function App() {
       </div>
 
       {/* ─── BOTTOM ACTION BAR ────────────────────────────────────────────── */}
-      <div className={`absolute bottom-0 left-0 right-0 z-[1000] ${surface}/90 backdrop-blur-xl border-t ${border} pb-[env(safe-area-inset-bottom)]`}>
-        <div className="flex items-center justify-around py-2.5 px-2">
-          <button onClick={() => { setShowRouting(true); setShowFeed(false); }}
-            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-blue-400">
-            <span className="text-lg">🧭</span>{t.findSafestPath}
-          </button>
-          <button onClick={() => setShowReport(true)}
-            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-red-400">
-            <span className="text-lg">🚨</span>{t.reportDanger}
-          </button>
-          <button onClick={() => { setShowFeed(true); setShowRouting(false); }}
-            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-green-400">
-            <span className="text-lg">📡</span>{t.liveSafetyFeed}
-          </button>
-          <button onClick={() => setShowEmergency(true)}
-            className="flex flex-col items-center gap-0.5 text-[10px] font-semibold text-red-500">
-            <span className="text-lg">🆘</span>{t.emergency}
+      <div className={`absolute bottom-0 left-0 right-0 z-[1000] ${surface}/90 backdrop-blur-xl border-t ${border}`}>
+        <div className="flex justify-around py-2">
+          {[
+            { icon: '🧭', label: t.safestPath, action: () => setShowRouting(true) },
+            { icon: '🚨', label: t.reportDanger, action: () => setShowReport(true) },
+            { icon: '📡', label: t.liveFeed, action: () => setShowFeed(true) },
+          ].map((btn, i) => (
+            <button key={i} onClick={btn.action} className="flex flex-col items-center gap-0.5 text-[10px] font-semibold opacity-90 hover:opacity-100">
+              <span className="text-xl">{btn.icon}</span> <span className={textSub}>{btn.label}</span>
+            </button>
+          ))}
+          <button onClick={() => setShowEmergency(true)} className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-red-400 hover:text-red-300">
+            <span className="text-lg bg-red-500 text-white px-2 py-0.5 rounded-md font-black">SOS</span>
+            <span>{t.emergency}</span>
           </button>
         </div>
       </div>
 
-      {/* ─── ROUTE PANEL ──────────────────────────────────────────────────── */}
+      {/* ─── TOAST ────────────────────────────────────────────────────────── */}
+      {toast && (
+        <div className="absolute top-[140px] left-1/2 -translate-x-1/2 z-[2000] bg-black/80 text-white text-sm px-4 py-2 rounded-xl backdrop-blur-md animate-pulse">
+          {toast}
+        </div>
+      )}
+
+      {/* ─── ROUTING PANEL ────────────────────────────────────────────────── */}
       {showRouting && (
-        <div className={`absolute bottom-16 left-3 right-3 z-[1001] ${surface} border ${border} rounded-3xl p-4`}>
+        <div className={`absolute bottom-14 left-3 right-3 z-[1001] ${surface} rounded-2xl border ${border} p-4 shadow-2xl`}>
           <div className="flex justify-between items-center mb-3">
-            <h3 className="text-sm font-bold">🧭 {t.findSafestPath}</h3>
-            <button onClick={() => { setShowRouting(false); setRouteCoords(null); setRouteInfo(null); }} className="text-lg">✕</button>
+            <h3 className="font-bold text-sm">🧭 {t.safestPath}</h3>
+            <button onClick={() => setShowRouting(false)} className="text-xs opacity-60">{t.close} ✕</button>
           </div>
           <select value={routeStart} onChange={e => setRouteStart(e.target.value)}
-            className={`w-full mb-2 px-3 py-2 rounded-xl ${isDark ? 'bg-white/10 text-white' : 'bg-gray-200 text-gray-900'} text-sm`}>
-            <option value="">{t.startPoint}</option>
-            {Object.keys(DISTRICT_COORDINATES).map(d => <option key={d} value={d}>{t.districts?.[d] || d}</option>)}
+            className={`w-full mb-2 p-2 rounded-lg text-sm ${isDark ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-900'} border ${border}`}>
+            <option value="">{t.from}</option>
+            {Object.keys(DISTRICT_COORDINATES).map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
           </select>
           <select value={routeEnd} onChange={e => setRouteEnd(e.target.value)}
-            className={`w-full mb-3 px-3 py-2 rounded-xl ${isDark ? 'bg-white/10 text-white' : 'bg-gray-200 text-gray-900'} text-sm`}>
-            <option value="">{t.destination}</option>
-            {Object.keys(DISTRICT_COORDINATES).map(d => <option key={d} value={d}>{t.districts?.[d] || d}</option>)}
+            className={`w-full mb-3 p-2 rounded-lg text-sm ${isDark ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-900'} border ${border}`}>
+            <option value="">{t.to}</option>
+            {Object.keys(DISTRICT_COORDINATES).map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
           </select>
           <button onClick={calculateRoute} disabled={isRouting || !routeStart || !routeEnd}
-            className="w-full py-2.5 bg-blue-600 text-white font-bold rounded-2xl text-sm disabled:opacity-40">
-            {isRouting ? t.routing : t.findSafestPath}
+            className="w-full py-2.5 rounded-xl bg-blue-500 text-white font-bold text-sm disabled:opacity-40">
+            {isRouting ? t.calculating : t.calculate}
           </button>
           {routeInfo && (
-            <div className="mt-3 p-3 bg-green-500/10 border border-green-500/30 rounded-2xl text-xs">
-              <p className="text-green-400 font-bold">{t.safePathFound} ✓</p>
-              <p className="mt-1">{t.estimatedTime}: <strong>{routeInfo.duration} {t.minutes}</strong></p>
-              <p>{t.dangerAvoided}: <strong>{routeInfo.dangerAvoided}</strong></p>
+            <div className="mt-3 text-xs text-center">
+              <span className="text-blue-400 font-bold">⏱ {routeInfo.duration} {t.minutes}</span>
+              <span className="mx-2">•</span>
+              <span className="text-red-400">⚠️ {routeInfo.dangerAvoided} {t.dangerAvoided}</span>
             </div>
           )}
         </div>
       )}
 
-      {/* ─── SAFETY FEED ──────────────────────────────────────────────────── */}
-      {showFeed && (
-        <div className={`absolute bottom-16 left-0 right-0 z-[1001] ${surface} border-t ${border} rounded-t-3xl max-h-[60vh] overflow-hidden flex flex-col`}>
-          <div className="flex justify-between items-center p-3 border-b border-white/5">
-            <h3 className="text-sm font-bold">📡 {t.liveSafetyFeed}</h3>
-            <button onClick={() => setShowFeed(false)} className="text-lg">✕</button>
-          </div>
-          <div className="flex gap-1 px-3 py-2">
-            {(['all', 'airstrikes', 'roads'] as const).map(f => (
-              <button key={f} onClick={() => setFeedFilter(f)}
-                className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${feedFilter === f ? 'bg-red-500 text-white' : 'bg-white/10 text-white/60'}`}>
-                {f === 'all' ? '📍 All' : f === 'airstrikes' ? '💥 Strikes' : '🚧 Roads'}
-              </button>
-            ))}
-          </div>
-          <div className="overflow-y-auto flex-1 px-3 pb-3 space-y-2">
-            {feedItems.map(a => (
-              <div key={a.id} className={`p-3 rounded-2xl border ${a.type === 'danger' || a.type === 'airstrike' ? 'border-red-500/30 bg-red-500/5' : a.type === 'road_closure' ? 'border-orange-500/30 bg-orange-500/5' : 'border-white/10 bg-white/5'}`}>
-                <div className="flex justify-between items-start">
-                  <span className="font-bold text-xs">{a.location}</span>
-                  <span className="text-[10px] opacity-50">{timeAgo(a.createdAt)}</span>
-                </div>
-                <p className="text-[11px] mt-1 opacity-70">{a.message}</p>
-                <div className="flex items-center gap-2 mt-1.5 text-[10px]">
-                  {a.verified ? <span className="text-green-400">{t.nnaVerified}</span> : <span className="text-yellow-400">{t.communityReport}</span>}
-                  {a.verificationCount ? <span className="opacity-40">• {t.verifiedBy.replace('{count}', String(a.verificationCount))}</span> : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ─── REPORT MODAL ─────────────────────────────────────────────────── */}
       {showReport && (
-        <div className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-sm flex items-end justify-center">
-          <div className={`w-full max-w-md ${surface} rounded-t-3xl p-5`}>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-base font-bold">🚨 {t.reportDanger}</h3>
-              <button onClick={() => setShowReport(false)} className="text-xl">✕</button>
-            </div>
-            <p className="text-xs mb-3 opacity-60">{t.dangerType}</p>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {DANGER_TYPES[lang].map((d, i) => (
+        <div className="absolute inset-0 z-[2000] bg-black/60 flex items-end justify-center" onClick={() => setShowReport(false)}>
+          <div className={`w-full max-w-md ${surface} rounded-t-3xl p-5 border-t ${border}`} onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold mb-4">🚨 {t.reportDanger}</h3>
+            <label className="text-xs font-semibold mb-1 block">{t.reportType}</label>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {DANGER_TYPES.map((dt, i) => (
                 <button key={i} onClick={() => setReportType(i)}
-                  className={`p-2.5 rounded-2xl text-xs font-semibold border transition-all ${reportType === i ? 'border-red-500 bg-red-500/20 text-red-400' : `border-white/10 ${isDark ? 'text-white/60' : 'text-gray-500'}`}`}>
-                  {d}
+                  className={`p-2 rounded-xl text-center text-xs ${reportType === i ? 'bg-red-500/20 border-red-500 border' : `${isDark ? 'bg-white/5' : 'bg-gray-100'} border ${border}`}`}>
+                  <span className="text-lg block">{dt.icon}</span>{dt[lang as 'en' | 'ar' | 'fr']}
                 </button>
               ))}
             </div>
-            <textarea value={reportDetails} onChange={e => setReportDetails(e.target.value)}
-              placeholder={t.describe} rows={2}
-              className={`w-full px-4 py-2.5 rounded-2xl ${isDark ? 'bg-white/10 text-white' : 'bg-gray-200 text-gray-900'} text-sm resize-none mb-4`} />
-            <button onClick={submitReport}
-              className="w-full py-3 bg-red-600 text-white font-black rounded-2xl text-sm tracking-wide">
-              {t.submitReport}
-            </button>
+            <textarea value={reportDetails} onChange={e => setReportDetails(e.target.value)} placeholder={t.details}
+              className={`w-full p-3 rounded-xl text-sm mb-3 ${isDark ? 'bg-white/5 text-white' : 'bg-gray-100 text-gray-900'} border ${border}`} rows={3} />
+            <button onClick={submitReport} className="w-full py-3 rounded-xl bg-red-500 text-white font-bold">{t.submit}</button>
           </div>
         </div>
       )}
 
       {/* ─── SETTINGS DRAWER ──────────────────────────────────────────────── */}
       {showSettings && (
-        <div className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-sm flex items-end justify-center">
-          <div className={`w-full max-w-md ${surface} rounded-t-3xl p-5 max-h-[80vh] overflow-y-auto`}>
-            <div className="flex justify-between items-center mb-5">
-              <h3 className="text-base font-bold">⚙️ {t.settings}</h3>
-              <button onClick={() => setShowSettings(false)} className="text-xl">✕</button>
-            </div>
+        <div className="absolute inset-0 z-[2000] bg-black/60" onClick={() => setShowSettings(false)}>
+          <div className={`absolute ${isRtl ? 'left-0' : 'right-0'} top-0 bottom-0 w-72 ${surface} border-l ${border} p-5`} onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold mb-5">⚙️ {t.settings}</h3>
             {/* Language */}
-            <div className="mb-5">
-              <p className="text-xs font-bold mb-2 opacity-60">{t.language}</p>
-              <div className="flex gap-2">
-                {(['en', 'ar', 'fr'] as Language[]).map(l => (
-                  <button key={l} onClick={() => setLang(l)}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold ${lang === l ? 'bg-red-500 text-white' : 'bg-white/10'}`}>
-                    {l === 'en' ? 'English' : l === 'ar' ? 'عربي' : 'Français'}
-                  </button>
-                ))}
-              </div>
+            <label className="text-xs font-semibold mb-2 block">{t.language}</label>
+            <div className="flex gap-2 mb-4">
+              {(['en', 'ar', 'fr'] as const).map(l => (
+                <button key={l} onClick={() => setLang(l)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${lang === l ? 'bg-blue-500 text-white' : `${isDark ? 'bg-white/10' : 'bg-gray-200'}`}`}>
+                  {l === 'en' ? 'English' : l === 'ar' ? 'العربية' : 'Français'}
+                </button>
+              ))}
             </div>
             {/* Theme */}
-            <div className="mb-5">
-              <p className="text-xs font-bold mb-2 opacity-60">{t.theme}</p>
-              <div className="flex gap-2">
-                {(['dark', 'light'] as Theme[]).map(th => (
-                  <button key={th} onClick={() => setTheme(th)}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold ${theme === th ? 'bg-red-500 text-white' : 'bg-white/10'}`}>
-                    {th === 'dark' ? '🌙 Dark' : '☀️ Light'}
-                  </button>
-                ))}
-              </div>
+            <label className="text-xs font-semibold mb-2 block">{t.theme}</label>
+            <div className="flex gap-2 mb-4">
+              {(['dark', 'light'] as const).map(th => (
+                <button key={th} onClick={() => setTheme(th)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${theme === th ? 'bg-blue-500 text-white' : `${isDark ? 'bg-white/10' : 'bg-gray-200'}`}`}>
+                  {th === 'dark' ? t.dark : t.light}
+                </button>
+              ))}
             </div>
             {/* Toggles */}
-            <div className="space-y-3 mb-5">
-              <label className={`flex items-center justify-between p-3 rounded-2xl ${isDark ? 'bg-white/5' : 'bg-gray-50'}`}>
-                <div>
-                  <p className="text-xs font-bold">{t.lowBandwidth}</p>
-                  <p className="text-[10px] opacity-50">{t.optimized3G}</p>
-                </div>
-                <input type="checkbox" checked={lowBandwidth} onChange={e => setLowBandwidth(e.target.checked)}
-                  className="w-5 h-5 accent-red-500" />
-              </label>
-              <label className={`flex items-center justify-between p-3 rounded-2xl ${isDark ? 'bg-white/5' : 'bg-gray-50'}`}>
-                <div>
-                  <p className="text-xs font-bold">{t.lowPower}</p>
-                  <p className="text-[10px] opacity-50">{t.lowPowerDesc}</p>
-                </div>
-                <input type="checkbox" checked={lowPower} onChange={e => setLowPower(e.target.checked)}
-                  className="w-5 h-5 accent-red-500" />
-              </label>
-            </div>
-            {/* QR + Share */}
-            <div className="flex gap-2 mb-4">
-              <button onClick={() => { setShowQR(true); setShowSettings(false); }}
-                className="flex-1 py-2.5 bg-white/10 rounded-2xl text-xs font-bold">{t.showQR}</button>
-              <button onClick={handleIAmSafe}
-                className="flex-1 py-2.5 bg-green-600 text-white rounded-2xl text-xs font-bold">{t.iAmSafe}</button>
-            </div>
-            <button onClick={() => setShowSettings(false)}
-              className="w-full py-3 bg-red-600 text-white font-black rounded-2xl text-sm">{t.close}</button>
+            {[
+              { label: t.lowBandwidth, state: lowBandwidth, setter: setLowBandwidth },
+              { label: t.lowPower, state: lowPower, setter: setLowPower },
+            ].map((toggle, i) => (
+              <div key={i} className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold">{toggle.label}</span>
+                <button onClick={() => toggle.setter(!toggle.state)}
+                  className={`w-10 h-5 rounded-full transition-colors ${toggle.state ? 'bg-green-500' : 'bg-gray-500'}`}>
+                  <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform ${toggle.state ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            ))}
+            {/* QR + I Am Safe */}
+            <button onClick={() => { setShowQR(true); setShowSettings(false); }}
+              className="w-full mt-3 py-2 rounded-lg bg-blue-500/20 text-blue-400 text-xs font-bold">📱 {t.shareQR}</button>
+            <button onClick={() => { addSafeCheckIn('beirut'); setToast(t.markedSafe); }}
+              className="w-full mt-2 py-2 rounded-lg bg-green-500/20 text-green-400 text-xs font-bold">{t.iAmSafe}</button>
           </div>
         </div>
       )}
 
-      {/* ─── EMERGENCY PANEL ──────────────────────────────────────────────── */}
-      {showEmergency && (
-        <div className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-sm flex items-end justify-center">
-          <div className={`w-full max-w-md ${surface} rounded-t-3xl p-5`}>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-base font-bold text-red-500">🆘 {t.emergencyContacts}</h3>
-              <button onClick={() => setShowEmergency(false)} className="text-xl">✕</button>
+      {/* ─── LIVE FEED PANEL ──────────────────────────────────────────────── */}
+      {showFeed && (
+        <div className="absolute inset-0 z-[2000] bg-black/60" onClick={() => setShowFeed(false)}>
+          <div className={`absolute bottom-0 left-0 right-0 max-h-[70vh] ${surface} rounded-t-3xl border-t ${border} overflow-hidden`} onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-white/5">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-bold text-sm">📡 {t.liveFeed}</h3>
+                <button onClick={() => setShowFeed(false)} className="text-xs opacity-60">{t.close} ✕</button>
+              </div>
+              <div className="flex gap-2">
+                {([['all', t.feedAll], ['airstrikes', t.feedAirstrikes], ['roads', t.feedRoads]] as const).map(([key, label]) => (
+                  <button key={key} onClick={() => setFeedFilter(key as any)}
+                    className={`px-3 py-1 rounded-full text-[10px] font-bold ${feedFilter === key ? 'bg-red-500 text-white' : `${isDark ? 'bg-white/10' : 'bg-gray-200'}`}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="space-y-2 mb-4">
+            <div className="overflow-y-auto max-h-[55vh] p-3 space-y-2">
+              {feedItems.map(item => (
+                <div key={item.id} className={`p-3 rounded-xl ${isDark ? 'bg-white/5' : 'bg-gray-50'} border ${border}`}>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-xs font-bold">{item.type === 'road_closure' ? '🚧' : '💥'} {item.location}</span>
+                      <p className="text-[10px] mt-0.5 opacity-70">{item.message}</p>
+                    </div>
+                    <span className="text-[10px] opacity-50">{timeAgo(item.createdAt)}</span>
+                  </div>
+                  {item.verified && <span className="text-[9px] text-green-400 mt-1 block">{t.verified} • {item.verificationCount} {t.votes}</span>}
+                  {item.type === 'road_closure' && (
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={() => updateAlert(item.id, { verificationCount: (item.verificationCount || 0) + 1 })}
+                        className="text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-400">👍 Confirm</button>
+                      <button className="text-[10px] px-2 py-0.5 rounded bg-red-500/20 text-red-400">👎 Deny</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── EMERGENCY / SOS PANEL ────────────────────────────────────────── */}
+      {showEmergency && (
+        <div className="absolute inset-0 z-[2000] bg-black/70" onClick={() => setShowEmergency(false)}>
+          <div className={`absolute bottom-0 left-0 right-0 ${surface} rounded-t-3xl border-t ${border} p-5`} onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold mb-4 text-red-400">🆘 {t.sosTitle}</h3>
+            <div className="grid grid-cols-2 gap-3">
               {EMERGENCY_CONTACTS.map((c, i) => (
                 <a key={i} href={`tel:${c.number}`}
-                  className={`flex items-center justify-between p-4 rounded-2xl ${isDark ? 'bg-red-500/10' : 'bg-red-50'} border border-red-500/20`}>
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{c.icon}</span>
-                    <div>
-                      <p className="font-bold text-sm">{lang === 'ar' ? c.nameAr : lang === 'fr' ? c.nameFr : c.name}</p>
-                      <p className="text-xs opacity-60">{c.number}</p>
-                    </div>
+                  className={`flex items-center gap-3 p-3 rounded-xl ${isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-gray-50 hover:bg-gray-100'} border ${border} transition-colors`}>
+                  <span className="text-2xl" style={{ filter: `drop-shadow(0 0 4px ${c.color})` }}>{c.icon}</span>
+                  <div>
+                    <span className="text-xs font-bold block">{c.name}</span>
+                    <span className="text-lg font-black" style={{ color: c.color }}>{c.number}</span>
                   </div>
-                  <span className="text-2xl">📞</span>
                 </a>
               ))}
             </div>
-            <button onClick={shareLocation}
-              className="w-full py-3 bg-green-600 text-white font-bold rounded-2xl text-sm mb-2">
-              📍 {t.shareLocation}
-            </button>
-            <button onClick={() => setShowEmergency(false)}
-              className="w-full py-2.5 bg-white/10 rounded-2xl text-xs font-bold">{t.close}</button>
           </div>
         </div>
       )}
 
       {/* ─── QR MODAL ─────────────────────────────────────────────────────── */}
       {showQR && (
-        <div className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-sm flex items-center justify-center"
-          onClick={() => setShowQR(false)}>
-          <div className={`${surface} rounded-3xl p-6 text-center max-w-xs`} onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-bold mb-3">📲 {t.showQR}</h3>
-            <div className="bg-white p-4 rounded-2xl inline-block mb-3">
-              <QRCodeSVG value={window.location.href} size={200} />
-            </div>
-            <p className="text-[10px] opacity-50 mb-3">{t.scanQR}</p>
-            <button onClick={() => { navigator.clipboard.writeText(window.location.href); setToast(t.shareSuccess); setShowQR(false); }}
-              className="w-full py-2.5 bg-red-600 text-white font-bold rounded-2xl text-xs">{t.shareApp}</button>
+        <div className="absolute inset-0 z-[2000] bg-black/70 flex items-center justify-center" onClick={() => setShowQR(false)}>
+          <div className={`${surface} rounded-2xl p-6 border ${border} text-center`} onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold mb-3">📱 {t.shareQR}</h3>
+            <QRCodeSVG value={`https://maps.google.com/?q=${userLocation?.[0] || LEBANON_CENTER[0]},${userLocation?.[1] || LEBANON_CENTER[1]}`} size={180} />
+            <p className="text-xs mt-3 opacity-60">{t.shareLocation}</p>
           </div>
-        </div>
-      )}
-
-      {/* ─── LOW BANDWIDTH OVERLAY ────────────────────────────────────────── */}
-      {lowBandwidth && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[500] pointer-events-none">
-          <p className="text-white/20 text-center text-xs font-bold tracking-widest">{t.lowBandwidthActive}</p>
-        </div>
-      )}
-
-      {/* ─── TOAST ────────────────────────────────────────────────────────── */}
-      {toast && (
-        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[3000] px-5 py-2.5 bg-green-600 text-white text-xs font-bold rounded-2xl shadow-lg animate-bounce">
-          {toast}
         </div>
       )}
     </div>
