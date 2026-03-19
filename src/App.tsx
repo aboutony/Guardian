@@ -33,13 +33,14 @@ function MapController({ center, zoom }: { center: [number, number]; zoom: numbe
     if (isInitial.current) { isInitial.current = false; return; }
     map.flyTo(center, zoom, { duration: 1 });
   }, [center, zoom, map]);
-  // Force Leaflet to recalculate after modular load
+  // Force Leaflet to recalculate at two intervals for reliability
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const t1 = setTimeout(() => { map.invalidateSize(); }, 100);
+    const t2 = setTimeout(() => {
       map.invalidateSize();
       window.dispatchEvent(new Event('resize'));
-    }, 300);
-    return () => clearTimeout(timer);
+    }, 500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [map]);
   return null;
 }
@@ -115,6 +116,14 @@ export default function App() {
       (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
       () => console.warn('Geolocation unavailable')
     );
+  }, []);
+
+  // ── Hard resize: force Leaflet container recalculation after app mount ────
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 500);
+    return () => clearTimeout(timer);
   }, []);
 
   // ── Toast auto-hide ────────────────────────────────────────────────────────
@@ -256,11 +265,10 @@ export default function App() {
         maxBounds={LEBANON_BOUNDS} maxBoundsViscosity={0.8}
         zoomControl={false} attributionControl={false}>
         <MapController center={mapCenter} zoom={mapZoom} />
-        {/* TileLayer always rendered — lowBandwidth hides via opacity, never unmounts */}
+        {/* TileLayer ALWAYS visible — never conditional, never opacity:0 */}
         <TileLayer
           url={isDark ? MAP_TILE_URL_DARK : MAP_TILE_URL_LIGHT}
           zIndex={1}
-          opacity={lowBandwidth ? 0 : 1}
         />
         {/* User location */}
         {userLocation && <Marker position={userLocation} icon={ICONS.user}>
