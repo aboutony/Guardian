@@ -1,49 +1,39 @@
-// App.tsx — Guardian Lebanon — Full Re-Wire Build
-// All static data & category arrays imported from ./constants
-// Dynamic hooks from ./data/safetyData
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+// App.tsx — Guardian Lebanon — Unified Data Engine Build
+// Direct GUARDIAN_DATA[activeCategory] rendering — NO intermediary state
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { QRCodeSVG } from 'qrcode.react';
 import {
-  TRANSLATIONS, DANGER_TYPES, DISTRICT_COORDINATES, LEBANON_CENTER, LEBANON_BOUNDS,
-  DEFAULT_ZOOM, SAFETY_BUFFER_METERS, OSRM_BASE_URL, FILTER_CATEGORIES,
-  MAP_TILE_URL_DARK, MAP_TILE_URL_LIGHT, EMERGENCY_CONTACTS,
-  HOSPITALS, AIRSTRIKES, BAKERIES, PHARMACIES, FUEL_STATIONS, NGOS, ROAD_BLOCKS,
-  CATEGORY_DATA,
+  TRANSLATIONS, DANGER_TYPES, DISTRICT_COORDINATES,
+  LEBANON_CENTER, LEBANON_BOUNDS, DEFAULT_ZOOM,
+  SAFETY_BUFFER_METERS, OSRM_BASE_URL,
+  MAP_TILE_URL_DARK, MAP_TILE_URL_LIGHT,
+  EMERGENCY_CONTACTS, FILTER_CATEGORIES,
+  GUARDIAN_DATA, ALL_MARKERS, MARKER_COLORS, MARKER_EMOJI,
+  AIRSTRIKES,
   type Language, type Theme, type MarkerPoint,
 } from './constants';
 import { useSafetyData, type Alert } from './data/safetyData';
 
-// ─── Leaflet Icon Factories (colored circle backgrounds for visibility) ──────
-const makeIcon = (emoji: string, bg: string, size = 36) => L.divIcon({
-  html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.3)"><span style="font-size:${Math.round(size * 0.5)}px;line-height:1">${emoji}</span></div>`,
-  className: 'marker-animate', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+// ─── Build Leaflet DivIcon on the fly ────────────────────────────────────────
+function buildIcon(markerIcon: string, size = 36): L.DivIcon {
+  const bg = MARKER_COLORS[markerIcon] || '#6b7280';
+  const emoji = MARKER_EMOJI[markerIcon] || '📍';
+  return L.divIcon({
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.4)"><span style="font-size:${size * 0.5}px;line-height:1">${emoji}</span></div>`,
+    className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+  });
+}
+
+// Pre-build icons for each category
+const CATEGORY_ICONS: Record<string, L.DivIcon> = {};
+FILTER_CATEGORIES.forEach(f => {
+  if (f.id !== 'all') CATEGORY_ICONS[f.id] = buildIcon(f.markerIcon);
 });
+const USER_ICON = buildIcon('user', 40);
 
-const ICONS: Record<string, L.DivIcon> = {
-  airstrike: makeIcon('💥', '#dc2626', 40),
-  hospital: makeIcon('🏥', '#2563eb'),
-  bakery: makeIcon('🍞', '#a16207'),
-  pharmacy: makeIcon('💊', '#7c3aed'),
-  fuel: makeIcon('⛽', '#059669'),
-  ngo: makeIcon('🤝', '#0891b2'),
-  road_block: makeIcon('🚧', '#ea580c'),
-  user: makeIcon('📍', '#3b82f6', 40),
-};
-
-// Icon lookup by category ID
-const CATEGORY_ICON: Record<string, L.DivIcon> = {
-  airstrikes: ICONS.airstrike,
-  hospitals: ICONS.hospital,
-  bakeries: ICONS.bakery,
-  pharmacies: ICONS.pharmacy,
-  fuel: ICONS.fuel,
-  ngo: ICONS.ngo,
-  road_status: ICONS.road_block,
-};
-
-// ─── MapController — flies to coords on change (skips initial mount) ─────────
+// ─── MapController ───────────────────────────────────────────────────────────
 function MapController({ center, zoom }: { center: [number, number]; zoom: number }) {
   const map = useMap();
   const isInitial = useRef(true);
@@ -52,7 +42,7 @@ function MapController({ center, zoom }: { center: [number, number]; zoom: numbe
     map.flyTo(center, zoom, { duration: 1 });
   }, [center, zoom, map]);
   useEffect(() => {
-    const t1 = setTimeout(() => { map.invalidateSize(); }, 100);
+    const t1 = setTimeout(() => map.invalidateSize(), 100);
     const t2 = setTimeout(() => {
       map.invalidateSize();
       window.dispatchEvent(new Event('resize'));
@@ -71,19 +61,25 @@ function haversine(a: [number, number], b: [number, number]): number {
 }
 function timeAgo(ts: number): string {
   const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
+  if (s < 60) return `${s}s`; if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`; return `${Math.floor(s / 86400)}d`;
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  MAIN APP COMPONENT
+// Resolve which icon to use for a marker in "all" mode
+function resolveAllIcon(marker: MarkerPoint): L.DivIcon {
+  for (const cat of FILTER_CATEGORIES) {
+    if (cat.id === 'all') continue;
+    const arr = GUARDIAN_DATA[cat.id];
+    if (arr && arr.some(m => m.id === marker.id)) return CATEGORY_ICONS[cat.id];
+  }
+  return buildIcon('all');
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 export default function App() {
   const { alerts, addAlert, updateAlert, safeCheckIns, addSafeCheckIn, locations } = useSafetyData();
 
-  // ── UI state ───────────────────────────────────────────────────────────────
+  // ── State ──────────────────────────────────────────────────────────────────
   const [lang, setLang] = useState<Language>(() => (localStorage.getItem('guardian-lang') as Language) || 'en');
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('guardian-theme') as Theme) || 'dark');
   const [activeCategory, setActiveCategory] = useState('all');
@@ -100,67 +96,47 @@ export default function App() {
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [mapCenter, setMapCenter] = useState<[number, number]>(LEBANON_CENTER);
   const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
-
-  // ── Routing state ──────────────────────────────────────────────────────────
   const [routeStart, setRouteStart] = useState('');
   const [routeEnd, setRouteEnd] = useState('');
   const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ duration: number; dangerAvoided: number } | null>(null);
   const [isRouting, setIsRouting] = useState(false);
-
-  // ── Report state ───────────────────────────────────────────────────────────
   const [reportType, setReportType] = useState(0);
   const [reportDetails, setReportDetails] = useState('');
-
-  // ── Feed filter ────────────────────────────────────────────────────────────
   const [feedFilter, setFeedFilter] = useState<'all' | 'airstrikes' | 'roads'>('all');
 
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const isDark = theme === 'dark';
 
-  // ── Persist preferences ────────────────────────────────────────────────────
+  // ── Effects ────────────────────────────────────────────────────────────────
   useEffect(() => { localStorage.setItem('guardian-lang', lang); }, [lang]);
   useEffect(() => { localStorage.setItem('guardian-theme', theme); }, [theme]);
-
-  // ── Geolocation ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
-      (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
-      () => console.warn('Geolocation unavailable')
+      pos => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
+      () => {}
     );
   }, []);
-
-  // ── Hard resize for Leaflet container recalculation ────────────────────────
   useEffect(() => {
-    const timer = setTimeout(() => { window.dispatchEvent(new Event('resize')); }, 500);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => window.dispatchEvent(new Event('resize')), 500);
+    return () => clearTimeout(t);
   }, []);
-
-  // ── Toast auto-hide ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(''), 3000);
     return () => clearTimeout(id);
   }, [toast]);
 
-  // ── Active markers based on category ───────────────────────────────────────
-  const activeMarkers: MarkerPoint[] = useMemo(() => {
-    if (activeCategory === 'all') {
-      return [...HOSPITALS, ...AIRSTRIKES, ...BAKERIES, ...PHARMACIES, ...FUEL_STATIONS, ...NGOS, ...ROAD_BLOCKS];
-    }
-    return CATEGORY_DATA[activeCategory] || [];
-  }, [activeCategory]);
-
-  // ── Auto-zoom when category changes ────────────────────────────────────────
+  // ── Category change → auto-zoom (ONLY if data exists) ─────────────────────
   useEffect(() => {
     if (activeCategory === 'all') {
       setMapCenter(LEBANON_CENTER);
       setMapZoom(DEFAULT_ZOOM);
       return;
     }
-    const points = CATEGORY_DATA[activeCategory];
+    const points = GUARDIAN_DATA[activeCategory];
     if (points && points.length > 0) {
       const avgLat = points.reduce((s, p) => s + p.coordinates[0], 0) / points.length;
       const avgLng = points.reduce((s, p) => s + p.coordinates[1], 0) / points.length;
@@ -169,43 +145,51 @@ export default function App() {
     }
   }, [activeCategory]);
 
-  // ── Search results ─────────────────────────────────────────────────────────
-  const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLowerCase();
-    return locations.filter((l: any) =>
-      l.name.toLowerCase().includes(q) || l.ar.includes(q) || (l.fr && l.fr.toLowerCase().includes(q))
-    ).slice(0, 5);
-  }, [searchQuery, locations]);
+  // ── THE DATA TO RENDER — direct from GUARDIAN_DATA, no intermediary ────────
+  const markersToRender: MarkerPoint[] = activeCategory === 'all'
+    ? ALL_MARKERS
+    : (GUARDIAN_DATA[activeCategory] || []);
 
-  // ── Feed items (filtered + sorted) ────────────────────────────────────────
-  const feedItems = useMemo(() => {
+  // ── Icon for current category ──────────────────────────────────────────────
+  const currentIcon: L.DivIcon = activeCategory !== 'all'
+    ? (CATEGORY_ICONS[activeCategory] || buildIcon('all'))
+    : buildIcon('all'); // fallback, overridden per-marker below
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+  const searchResults = searchQuery.trim()
+    ? locations.filter((l: any) => {
+        const q = searchQuery.toLowerCase();
+        return l.name.toLowerCase().includes(q) || l.ar.includes(q) || (l.fr && l.fr.toLowerCase().includes(q));
+      }).slice(0, 5)
+    : [];
+
+  // ── Feed ───────────────────────────────────────────────────────────────────
+  const feedItems = (() => {
     let items = [...alerts];
     if (feedFilter === 'airstrikes') items = items.filter(a => a.type === 'danger' || a.type === 'airstrike');
     if (feedFilter === 'roads') items = items.filter(a => a.type === 'road_closure');
     return items.sort((a, b) => b.createdAt - a.createdAt).slice(0, 50);
-  }, [alerts, feedFilter]);
+  })();
 
-  // ── Route calculation with safety buffer ──────────────────────────────────
+  // ── Route ──────────────────────────────────────────────────────────────────
   const calculateRoute = useCallback(async () => {
     if (!routeStart || !routeEnd) return;
     setIsRouting(true);
     try {
-      const startCoord = DISTRICT_COORDINATES[routeStart];
-      const endCoord = DISTRICT_COORDINATES[routeEnd];
-      if (!startCoord || !endCoord) { setIsRouting(false); return; }
-      const res = await fetch(`${OSRM_BASE_URL}/${startCoord[1]},${startCoord[0]};${endCoord[1]},${endCoord[0]}?overview=full&geometries=geojson`);
+      const s = DISTRICT_COORDINATES[routeStart], e = DISTRICT_COORDINATES[routeEnd];
+      if (!s || !e) { setIsRouting(false); return; }
+      const res = await fetch(`${OSRM_BASE_URL}/${s[1]},${s[0]};${e[1]},${e[0]}?overview=full&geometries=geojson`);
       const data = await res.json();
       if (data.routes?.[0]) {
         const coords: [number, number][] = data.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
         const dangerZones = AIRSTRIKES.map(a => a.coordinates);
         let avoided = 0;
-        const safeCoords = coords.filter(c => {
-          const nearDanger = dangerZones.some(dz => haversine(c, dz) < SAFETY_BUFFER_METERS);
-          if (nearDanger) avoided++;
-          return !nearDanger;
+        const safe = coords.filter(c => {
+          const near = dangerZones.some(dz => haversine(c, dz) < SAFETY_BUFFER_METERS);
+          if (near) avoided++;
+          return !near;
         });
-        setRouteCoords(safeCoords.length > 2 ? safeCoords : coords);
+        setRouteCoords(safe.length > 2 ? safe : coords);
         setRouteInfo({ duration: Math.round(data.routes[0].duration / 60), dangerAvoided: avoided });
         setToast(`✅ ${t.routeFound} — ${avoided} ${t.dangerAvoided}`);
       }
@@ -213,36 +197,17 @@ export default function App() {
     setIsRouting(false);
   }, [routeStart, routeEnd, t]);
 
-  // ── Submit report ──────────────────────────────────────────────────────────
+  // ── Report ─────────────────────────────────────────────────────────────────
   const submitReport = useCallback(() => {
     const dt = DANGER_TYPES[reportType];
-    const coords: [number, number] = userLocation || LEBANON_CENTER;
     addAlert({
       type: dt.type === 'road_closure' ? 'road_closure' : 'danger',
-      location: `User Report — ${dt.en}`,
-      districtId: 'beirut',
-      message: reportDetails || dt.en,
-      createdAt: Date.now(),
-      coordinates: coords,
-      isUserReported: true,
+      location: `User Report — ${dt.en}`, districtId: 'beirut',
+      message: reportDetails || dt.en, createdAt: Date.now(),
+      coordinates: userLocation || LEBANON_CENTER, isUserReported: true,
     });
-    setShowReport(false);
-    setReportDetails('');
-    setToast(t.submitted);
+    setShowReport(false); setReportDetails(''); setToast(t.submitted);
   }, [reportType, reportDetails, userLocation, addAlert, t]);
-
-  // ── Icon resolver for markers ──────────────────────────────────────────────
-  const getMarkerIcon = (marker: MarkerPoint): L.DivIcon => {
-    if (activeCategory !== 'all') return CATEGORY_ICON[activeCategory] || ICONS.ngo;
-    // In "All" mode, determine icon by category membership
-    if (HOSPITALS.some(h => h.id === marker.id)) return ICONS.hospital;
-    if (AIRSTRIKES.some(a => a.id === marker.id)) return ICONS.airstrike;
-    if (BAKERIES.some(b => b.id === marker.id)) return ICONS.bakery;
-    if (PHARMACIES.some(p => p.id === marker.id)) return ICONS.pharmacy;
-    if (FUEL_STATIONS.some(f => f.id === marker.id)) return ICONS.fuel;
-    if (ROAD_BLOCKS.some(r => r.id === marker.id)) return ICONS.road_block;
-    return ICONS.ngo;
-  };
 
   // ── Theme classes ──────────────────────────────────────────────────────────
   const bg = isDark ? 'bg-[#121212]' : 'bg-white';
@@ -251,49 +216,63 @@ export default function App() {
   const textSub = isDark ? 'text-gray-400' : 'text-gray-500';
   const border = isDark ? 'border-white/10' : 'border-gray-200';
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═════════════════════════════════════════════════════════════════════════════
   //  RENDER
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═════════════════════════════════════════════════════════════════════════════
   return (
     <div className={`relative w-screen h-[100dvh] overflow-hidden ${bg} ${textMain}`} dir={isRtl ? 'rtl' : 'ltr'}>
 
-      {/* ─── MAP ──────────────────────────────────────────────────────────── */}
-      <MapContainer center={LEBANON_CENTER} zoom={DEFAULT_ZOOM}
+      {/* ─── MAP ──────────────────────────────────────────────────────── */}
+      <MapContainer
+        center={LEBANON_CENTER}
+        zoom={DEFAULT_ZOOM}
         style={{ height: '100dvh', width: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}
-        maxBounds={LEBANON_BOUNDS} maxBoundsViscosity={0.8}
-        zoomControl={false} attributionControl={false}>
+        maxBounds={LEBANON_BOUNDS}
+        maxBoundsViscosity={0.8}
+        zoomControl={false}
+        attributionControl={false}
+      >
         <MapController center={mapCenter} zoom={mapZoom} />
-        {/* TileLayer ALWAYS rendered — no conditional wrapper */}
-        <TileLayer
-          url={isDark ? MAP_TILE_URL_DARK : MAP_TILE_URL_LIGHT}
-          zIndex={1}
-        />
-        {/* User location */}
-        {userLocation && <Marker position={userLocation} icon={ICONS.user}>
-          <Popup><strong>📍 {t.shareLocation}</strong></Popup>
-        </Marker>}
-        {/* Category markers — directly from CATEGORY_DATA */}
-        {activeMarkers.map(marker => (
-          <Marker key={marker.id} position={marker.coordinates} icon={getMarkerIcon(marker)}>
+
+        {/* TILE LAYER — ALWAYS RENDERED, HARDCODED, NO CONDITIONAL */}
+        <TileLayer url={isDark ? MAP_TILE_URL_DARK : MAP_TILE_URL_LIGHT} />
+
+        {/* USER LOCATION */}
+        {userLocation && (
+          <Marker position={userLocation} icon={USER_ICON}>
+            <Popup><strong>📍 {t.shareLocation}</strong></Popup>
+          </Marker>
+        )}
+
+        {/* ═══ CATEGORY MARKERS — DIRECT FROM GUARDIAN_DATA ═══ */}
+        {markersToRender.map(marker => (
+          <Marker
+            key={marker.id}
+            position={marker.coordinates}
+            icon={activeCategory === 'all' ? resolveAllIcon(marker) : currentIcon}
+          >
             <Popup>
               <div className="text-xs min-w-[160px]">
                 <strong>{marker.name}</strong>
                 {marker.message && <p className="mt-1 text-gray-600">{marker.message}</p>}
-                {marker.status && <span className={`block mt-1 ${marker.status === 'open' ? 'text-green-500' : 'text-red-500'}`}>{marker.status === 'open' ? t.open : t.closed}</span>}
+                {marker.status && (
+                  <span className={`block mt-1 ${marker.status === 'open' ? 'text-green-600' : 'text-red-500'}`}>
+                    {marker.status === 'open' ? t.open : t.closed}
+                  </span>
+                )}
                 {marker.hours && <span className="block text-gray-400">🕐 {marker.hours}</span>}
-                {marker.phone && <a href={`tel:${marker.phone}`} className="block mt-1 text-blue-400 font-bold">📞 {marker.phone}</a>}
-                {marker.verified && <span className="block mt-1 text-green-400">{t.verified} ({marker.verificationCount})</span>}
+                {marker.phone && <a href={`tel:${marker.phone}`} className="block mt-1 text-blue-500 font-bold">📞 {marker.phone}</a>}
+                {marker.verified && <span className="block mt-1 text-green-500">{t.verified} ({marker.verificationCount})</span>}
               </div>
             </Popup>
           </Marker>
         ))}
-        {/* Route polyline */}
-        {routeCoords && <Polyline positions={routeCoords} pathOptions={{
-          color: '#3B82F6', weight: 4, dashArray: '10 6', opacity: 0.9
-        }} />}
+
+        {/* ROUTE */}
+        {routeCoords && <Polyline positions={routeCoords} pathOptions={{ color: '#3B82F6', weight: 4, dashArray: '10 6', opacity: 0.9 }} />}
       </MapContainer>
 
-      {/* ─── HEADER BAR ───────────────────────────────────────────────────── */}
+      {/* ─── HEADER ───────────────────────────────────────────────────── */}
       <div className={`absolute top-0 left-0 right-0 z-[1000] ${surface}/90 backdrop-blur-xl border-b ${border}`}>
         <div className="flex items-center justify-between px-3 py-2">
           <h1 className="text-lg font-black tracking-tight text-red-500">🛡️ GUARDIAN</h1>
@@ -302,14 +281,13 @@ export default function App() {
             <button onClick={() => setShowSettings(true)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-sm">⚙️</button>
           </div>
         </div>
-        {/* Filter chips */}
         <div className="flex gap-1.5 px-3 pb-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {FILTER_CATEGORIES.map(f => (
             <button key={f.id} onClick={() => setActiveCategory(f.id)}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
                 activeCategory === f.id
                   ? 'bg-red-500 text-white ring-2 ring-red-400 ring-offset-1 ring-offset-black shadow-[0_0_12px_rgba(239,68,68,0.5)]'
-                  : `${isDark ? 'bg-white/10 text-white/70 hover:bg-white/20' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`
+                  : isDark ? 'bg-white/10 text-white/70 hover:bg-white/20' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
               }`}>
               <span className="text-sm">{f.icon}</span> {f[lang]}
             </button>
@@ -317,10 +295,9 @@ export default function App() {
         </div>
       </div>
 
-      {/* ─── SEARCH BAR ───────────────────────────────────────────────────── */}
+      {/* ─── SEARCH ───────────────────────────────────────────────────── */}
       <div className="absolute top-[88px] left-3 right-3 z-[1000]">
-        <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-          placeholder={t.searchPlaceholder}
+        <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder={t.searchPlaceholder}
           className={`w-full px-4 py-2.5 rounded-xl ${surface}/90 backdrop-blur-md ${textMain} placeholder:${textSub} border ${border} text-sm`} />
         {searchResults.length > 0 && (
           <div className={`mt-1 ${surface} rounded-xl border ${border} overflow-hidden shadow-2xl`}>
@@ -334,7 +311,7 @@ export default function App() {
         )}
       </div>
 
-      {/* ─── BOTTOM ACTION BAR ────────────────────────────────────────────── */}
+      {/* ─── BOTTOM BAR ───────────────────────────────────────────────── */}
       <div className={`absolute bottom-0 left-0 right-0 z-[1000] ${surface}/90 backdrop-blur-xl border-t ${border}`}>
         <div className="flex justify-around py-2">
           {[
@@ -343,24 +320,20 @@ export default function App() {
             { icon: '📡', label: t.liveFeed, action: () => setShowFeed(true) },
           ].map((btn, i) => (
             <button key={i} onClick={btn.action} className="flex flex-col items-center gap-0.5 text-[10px] font-semibold opacity-90 hover:opacity-100">
-              <span className="text-xl">{btn.icon}</span> <span className={textSub}>{btn.label}</span>
+              <span className="text-xl">{btn.icon}</span><span className={textSub}>{btn.label}</span>
             </button>
           ))}
-          <button onClick={() => setShowEmergency(true)} className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-red-400 hover:text-red-300">
+          <button onClick={() => setShowEmergency(true)} className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-red-400">
             <span className="text-lg bg-red-500 text-white px-2 py-0.5 rounded-md font-black">SOS</span>
             <span>{t.emergency}</span>
           </button>
         </div>
       </div>
 
-      {/* ─── TOAST ────────────────────────────────────────────────────────── */}
-      {toast && (
-        <div className="absolute top-[140px] left-1/2 -translate-x-1/2 z-[2000] bg-black/80 text-white text-sm px-4 py-2 rounded-xl backdrop-blur-md animate-pulse">
-          {toast}
-        </div>
-      )}
+      {/* ─── TOAST ────────────────────────────────────────────────────── */}
+      {toast && <div className="absolute top-[140px] left-1/2 -translate-x-1/2 z-[2000] bg-black/80 text-white text-sm px-4 py-2 rounded-xl backdrop-blur-md animate-pulse">{toast}</div>}
 
-      {/* ─── ROUTING PANEL ────────────────────────────────────────────────── */}
+      {/* ─── ROUTING ──────────────────────────────────────────────────── */}
       {showRouting && (
         <div className={`absolute bottom-14 left-3 right-3 z-[1001] ${surface} rounded-2xl border ${border} p-4 shadow-2xl`}>
           <div className="flex justify-between items-center mb-3">
@@ -368,12 +341,12 @@ export default function App() {
             <button onClick={() => setShowRouting(false)} className="text-xs opacity-60">{t.close} ✕</button>
           </div>
           <select value={routeStart} onChange={e => setRouteStart(e.target.value)}
-            className={`w-full mb-2 p-2 rounded-lg text-sm ${isDark ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-900'} border ${border}`}>
+            className={`w-full mb-2 p-2 rounded-lg text-sm ${isDark ? 'bg-white/10 text-white' : 'bg-gray-100'} border ${border}`}>
             <option value="">{t.from}</option>
             {Object.keys(DISTRICT_COORDINATES).map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
           </select>
           <select value={routeEnd} onChange={e => setRouteEnd(e.target.value)}
-            className={`w-full mb-3 p-2 rounded-lg text-sm ${isDark ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-900'} border ${border}`}>
+            className={`w-full mb-3 p-2 rounded-lg text-sm ${isDark ? 'bg-white/10 text-white' : 'bg-gray-100'} border ${border}`}>
             <option value="">{t.to}</option>
             {Object.keys(DISTRICT_COORDINATES).map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
           </select>
@@ -391,10 +364,10 @@ export default function App() {
         </div>
       )}
 
-      {/* ─── REPORT MODAL ─────────────────────────────────────────────────── */}
+      {/* ─── REPORT ───────────────────────────────────────────────────── */}
       {showReport && (
-        <div className="absolute inset-0 z-[2000] bg-black/60 flex items-end justify-center" onClick={() => setShowReport(false)}>
-          <div className={`w-full max-w-md ${surface} rounded-t-3xl p-5 border-t ${border}`} onClick={e => e.stopPropagation()}>
+        <div className="absolute inset-0 z-[2000] bg-black/60 flex items-end" onClick={() => setShowReport(false)}>
+          <div className={`w-full max-w-md mx-auto ${surface} rounded-t-3xl p-5 border-t ${border}`} onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold mb-4">🚨 {t.reportDanger}</h3>
             <label className="text-xs font-semibold mb-1 block">{t.reportType}</label>
             <div className="grid grid-cols-3 gap-2 mb-3">
@@ -406,51 +379,47 @@ export default function App() {
               ))}
             </div>
             <textarea value={reportDetails} onChange={e => setReportDetails(e.target.value)} placeholder={t.details}
-              className={`w-full p-3 rounded-xl text-sm mb-3 ${isDark ? 'bg-white/5 text-white' : 'bg-gray-100 text-gray-900'} border ${border}`} rows={3} />
+              className={`w-full p-3 rounded-xl text-sm mb-3 ${isDark ? 'bg-white/5 text-white' : 'bg-gray-100'} border ${border}`} rows={3} />
             <button onClick={submitReport} className="w-full py-3 rounded-xl bg-red-500 text-white font-bold">{t.submit}</button>
           </div>
         </div>
       )}
 
-      {/* ─── SETTINGS DRAWER ──────────────────────────────────────────────── */}
+      {/* ─── SETTINGS ─────────────────────────────────────────────────── */}
       {showSettings && (
         <div className="absolute inset-0 z-[2000] bg-black/60" onClick={() => setShowSettings(false)}>
           <div className={`absolute ${isRtl ? 'left-0' : 'right-0'} top-0 bottom-0 w-72 ${surface} border-l ${border} p-5`} onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold mb-5">⚙️ {t.settings}</h3>
-            {/* Language */}
             <label className="text-xs font-semibold mb-2 block">{t.language}</label>
             <div className="flex gap-2 mb-4">
               {(['en', 'ar', 'fr'] as const).map(l => (
                 <button key={l} onClick={() => setLang(l)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${lang === l ? 'bg-blue-500 text-white' : `${isDark ? 'bg-white/10' : 'bg-gray-200'}`}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${lang === l ? 'bg-blue-500 text-white' : isDark ? 'bg-white/10' : 'bg-gray-200'}`}>
                   {l === 'en' ? 'English' : l === 'ar' ? 'العربية' : 'Français'}
                 </button>
               ))}
             </div>
-            {/* Theme */}
             <label className="text-xs font-semibold mb-2 block">{t.theme}</label>
             <div className="flex gap-2 mb-4">
               {(['dark', 'light'] as const).map(th => (
                 <button key={th} onClick={() => setTheme(th)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${theme === th ? 'bg-blue-500 text-white' : `${isDark ? 'bg-white/10' : 'bg-gray-200'}`}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${theme === th ? 'bg-blue-500 text-white' : isDark ? 'bg-white/10' : 'bg-gray-200'}`}>
                   {th === 'dark' ? t.dark : t.light}
                 </button>
               ))}
             </div>
-            {/* Toggles */}
             {[
               { label: t.lowBandwidth, state: lowBandwidth, setter: setLowBandwidth },
               { label: t.lowPower, state: lowPower, setter: setLowPower },
-            ].map((toggle, i) => (
+            ].map((tog, i) => (
               <div key={i} className="flex items-center justify-between mb-3">
-                <span className="text-xs font-semibold">{toggle.label}</span>
-                <button onClick={() => toggle.setter(!toggle.state)}
-                  className={`w-10 h-5 rounded-full transition-colors ${toggle.state ? 'bg-green-500' : 'bg-gray-500'}`}>
-                  <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform ${toggle.state ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                <span className="text-xs font-semibold">{tog.label}</span>
+                <button onClick={() => tog.setter(!tog.state)}
+                  className={`w-10 h-5 rounded-full transition-colors ${tog.state ? 'bg-green-500' : 'bg-gray-500'}`}>
+                  <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform ${tog.state ? 'translate-x-5' : 'translate-x-0.5'}`} />
                 </button>
               </div>
             ))}
-            {/* QR + I Am Safe */}
             <button onClick={() => { setShowQR(true); setShowSettings(false); }}
               className="w-full mt-3 py-2 rounded-lg bg-blue-500/20 text-blue-400 text-xs font-bold">📱 {t.shareQR}</button>
             <button onClick={() => { addSafeCheckIn('beirut'); setToast(t.markedSafe); }}
@@ -459,7 +428,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ─── LIVE FEED PANEL ──────────────────────────────────────────────── */}
+      {/* ─── FEED ─────────────────────────────────────────────────────── */}
       {showFeed && (
         <div className="absolute inset-0 z-[2000] bg-black/60" onClick={() => setShowFeed(false)}>
           <div className={`absolute bottom-0 left-0 right-0 max-h-[70vh] ${surface} rounded-t-3xl border-t ${border} overflow-hidden`} onClick={e => e.stopPropagation()}>
@@ -471,7 +440,7 @@ export default function App() {
               <div className="flex gap-2">
                 {([['all', t.feedAll], ['airstrikes', t.feedAirstrikes], ['roads', t.feedRoads]] as const).map(([key, label]) => (
                   <button key={key} onClick={() => setFeedFilter(key as any)}
-                    className={`px-3 py-1 rounded-full text-[10px] font-bold ${feedFilter === key ? 'bg-red-500 text-white' : `${isDark ? 'bg-white/10' : 'bg-gray-200'}`}`}>
+                    className={`px-3 py-1 rounded-full text-[10px] font-bold ${feedFilter === key ? 'bg-red-500 text-white' : isDark ? 'bg-white/10' : 'bg-gray-200'}`}>
                     {label}
                   </button>
                 ))}
@@ -502,7 +471,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ─── EMERGENCY / SOS PANEL ────────────────────────────────────────── */}
+      {/* ─── SOS ──────────────────────────────────────────────────────── */}
       {showEmergency && (
         <div className="absolute inset-0 z-[2000] bg-black/70" onClick={() => setShowEmergency(false)}>
           <div className={`absolute bottom-0 left-0 right-0 ${surface} rounded-t-3xl border-t ${border} p-5`} onClick={e => e.stopPropagation()}>
@@ -510,7 +479,7 @@ export default function App() {
             <div className="grid grid-cols-2 gap-3">
               {EMERGENCY_CONTACTS.map((c, i) => (
                 <a key={i} href={`tel:${c.number}`}
-                  className={`flex items-center gap-3 p-3 rounded-xl ${isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-gray-50 hover:bg-gray-100'} border ${border} transition-colors`}>
+                  className={`flex items-center gap-3 p-3 rounded-xl ${isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-gray-50 hover:bg-gray-100'} border ${border}`}>
                   <span className="text-2xl" style={{ filter: `drop-shadow(0 0 4px ${c.color})` }}>{c.icon}</span>
                   <div>
                     <span className="text-xs font-bold block">{c.name}</span>
@@ -523,7 +492,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ─── QR MODAL ─────────────────────────────────────────────────────── */}
+      {/* ─── QR ───────────────────────────────────────────────────────── */}
       {showQR && (
         <div className="absolute inset-0 z-[2000] bg-black/70 flex items-center justify-center" onClick={() => setShowQR(false)}>
           <div className={`${surface} rounded-2xl p-6 border ${border} text-center`} onClick={e => e.stopPropagation()}>
