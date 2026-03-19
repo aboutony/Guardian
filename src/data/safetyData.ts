@@ -14,6 +14,7 @@ export interface Alert {
   districtId: string;
   message: string;
   timestamp: string;
+  createdAt: number;
   coordinates: [number, number];
   verified: boolean;
   isUserReported?: boolean;
@@ -43,14 +44,14 @@ export const districts: District[] = [
 ];
 
 export const initialAlerts: Alert[] = [
-  { id: '1', type: 'danger', location: 'Haret Hreik', districtId: 'dahieh', message: 'Confirmed Air Strike - Avoid Area', timestamp: '2m', coordinates: [33.848, 35.505], verified: true, verificationCount: 12 },
-  { id: '2', type: 'warning', location: 'Tyre Coast', districtId: 'tyre', message: 'Heavy Shelling Reported', timestamp: '15m', coordinates: [33.271, 35.196], verified: true, verificationCount: 8 },
-  { id: '3', type: 'danger', location: 'Baalbek Center', districtId: 'baalbek', message: 'Immediate Evacuation Order', timestamp: '5m', coordinates: [34.006, 36.202], verified: true, verificationCount: 15 },
-  { id: '4', type: 'info', location: 'Saida North', districtId: 'saida', message: 'Road Blockage - Use Alternate Route', timestamp: '45m', coordinates: [33.572, 35.381], verified: false, verificationCount: 1 },
-  { id: 'rc1', type: 'road_closure', location: 'Qasmiyeh Bridge', districtId: 'tyre', message: 'Bridge closed due to structural damage - Use coastal road', timestamp: '5m', coordinates: [33.318, 35.265], verified: true, verificationCount: 9, roadOpen: false },
-  { id: 'rc2', type: 'road_closure', location: 'Jiyyeh Highway', districtId: 'saida', message: 'Highway blocked - Debris from shelling', timestamp: '22m', coordinates: [33.669, 35.408], verified: true, verificationCount: 6, roadOpen: false },
-  { id: 'rc3', type: 'road_closure', location: 'Damour Tunnel', districtId: 'beirut', message: 'Tunnel partially collapsed - Emergency crews on site', timestamp: '1h', coordinates: [33.733, 35.450], verified: false, verificationCount: 2, roadOpen: false },
-  { id: 'rc4', type: 'road_closure', location: 'Litani Bridge - Nabatieh', districtId: 'nabatieh', message: 'Bridge closed by ISF - Alternative via Marjayoun', timestamp: '35m', coordinates: [33.352, 35.485], verified: true, verificationCount: 11, roadOpen: false },
+  { id: '1', type: 'danger', location: 'Haret Hreik', districtId: 'dahieh', message: 'Confirmed Air Strike - Avoid Area', timestamp: '2m', createdAt: Date.now() - 120000, coordinates: [33.848, 35.505], verified: true, verificationCount: 12 },
+  { id: '2', type: 'warning', location: 'Tyre Coast', districtId: 'tyre', message: 'Heavy Shelling Reported', timestamp: '15m', createdAt: Date.now() - 900000, coordinates: [33.271, 35.196], verified: true, verificationCount: 8 },
+  { id: '3', type: 'danger', location: 'Baalbek Center', districtId: 'baalbek', message: 'Immediate Evacuation Order', timestamp: '5m', createdAt: Date.now() - 300000, coordinates: [34.006, 36.202], verified: true, verificationCount: 15 },
+  { id: '4', type: 'info', location: 'Saida North', districtId: 'saida', message: 'Road Blockage - Use Alternate Route', timestamp: '45m', createdAt: Date.now() - 2700000, coordinates: [33.572, 35.381], verified: false, verificationCount: 1 },
+  { id: 'rc1', type: 'road_closure', location: 'Qasmiyeh Bridge', districtId: 'tyre', message: 'Bridge closed due to structural damage - Use coastal road', timestamp: '5m', createdAt: Date.now() - 300000, coordinates: [33.318, 35.265], verified: true, verificationCount: 9, roadOpen: false },
+  { id: 'rc2', type: 'road_closure', location: 'Jiyyeh Highway', districtId: 'saida', message: 'Highway blocked - Debris from shelling', timestamp: '22m', createdAt: Date.now() - 1320000, coordinates: [33.669, 35.408], verified: true, verificationCount: 6, roadOpen: false },
+  { id: 'rc3', type: 'road_closure', location: 'Damour Tunnel', districtId: 'beirut', message: 'Tunnel partially collapsed - Emergency crews on site', timestamp: '1h', createdAt: Date.now() - 3600000, coordinates: [33.733, 35.450], verified: false, verificationCount: 2, roadOpen: false },
+  { id: 'rc4', type: 'road_closure', location: 'Litani Bridge - Nabatieh', districtId: 'nabatieh', message: 'Bridge closed by ISF - Alternative via Marjayoun', timestamp: '35m', createdAt: Date.now() - 2100000, coordinates: [33.352, 35.485], verified: true, verificationCount: 11, roadOpen: false },
 ];
 
 export const essentialServices: EssentialService[] = [
@@ -111,14 +112,33 @@ export const lebanonLocations = [
   { name: 'Batroun', ar: 'البترون', coords: [34.2553, 35.6581] },
 ];
 
+const FEED_STORAGE_KEY = 'guardian-feed-history';
+const MAX_FEED_ENTRIES = 100;
+
+function persistFeed(alerts: Alert[]) {
+  try {
+    localStorage.setItem(FEED_STORAGE_KEY, JSON.stringify(alerts.slice(0, MAX_FEED_ENTRIES)));
+  } catch { /* localStorage full — silent fail */ }
+}
+
+function loadPersistedFeed(): Alert[] | null {
+  try {
+    const raw = localStorage.getItem(FEED_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as Alert[];
+  } catch { /* corrupted cache */ }
+  return null;
+}
+
 export function useSafetyData() {
-  const [alerts, setAlerts] = useState<Alert[]>(initialAlerts);
+  const [alerts, setAlerts] = useState<Alert[]>(() => {
+    const persisted = loadPersistedFeed();
+    return persisted && persisted.length > 0 ? persisted : initialAlerts;
+  });
   const [services, setServices] = useState<EssentialService[]>(essentialServices);
 
   // Simulate live updates
   useEffect(() => {
     const interval = setInterval(() => {
-      // In a real app, this would fetch from an API or Telegram feed
       console.log('Fetching live safety data updates...');
     }, 30000);
     return () => clearInterval(interval);
@@ -129,14 +149,23 @@ export function useSafetyData() {
       ...newAlert,
       id: Math.random().toString(36).substr(2, 9),
       timestamp: 'Just now',
+      createdAt: (newAlert as any).createdAt || Date.now(),
       verified: false,
       verificationCount: 0,
     };
-    setAlerts(prev => [alert, ...prev]);
+    setAlerts(prev => {
+      const updated = [alert, ...prev].slice(0, MAX_FEED_ENTRIES);
+      persistFeed(updated);
+      return updated;
+    });
   }, []);
 
   const updateAlert = useCallback((id: string, updates: Partial<Alert>) => {
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+    setAlerts(prev => {
+      const updated = prev.map(a => a.id === id ? { ...a, ...updates } : a);
+      persistFeed(updated);
+      return updated;
+    });
   }, []);
 
   return {

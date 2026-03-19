@@ -905,6 +905,22 @@ const SOSModal = ({ isOpen, onClose, t, isRTL, theme }: any) => {
   );
 };
 
+// --- Relative Timestamp Utility ---
+const timeAgo = (createdAt: number | undefined, fallback: string): string => {
+  if (!createdAt) return fallback;
+  const diff = Date.now() - createdAt;
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return 'Just now';
+  const mins = Math.floor(seconds / 60);
+  if (mins < 60) return `${mins} min${mins > 1 ? 's' : ''} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hr${hours > 1 ? 's' : ''} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days > 1 ? 's' : ''} ago`;
+};
+
+type FeedFilter = 'all' | 'strikes' | 'roads';
+
 // --- Bottom Sheet ---
 const BottomSheet = ({ 
   theme, t, isRTL, districts, startDistrict, setStartDistrict, endDistrict, setEndDistrict, 
@@ -912,12 +928,21 @@ const BottomSheet = ({
   focusedAlertId, setFocusedAlertId, setIsReportModalOpen, setIsVideoCallOpen, setIsSOSModalOpen
 }: any) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [feedFilter, setFeedFilter] = useState<FeedFilter>('all');
   const controls = useAnimation();
 
   const onDragEnd = (event: any, info: any) => {
     if (info.offset.y < -50) setIsOpen(true);
     if (info.offset.y > 50) setIsOpen(false);
   };
+
+  // Apply feed category filter
+  const feedAlerts = useMemo(() => {
+    const sorted = [...filteredAlerts].sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
+    if (feedFilter === 'strikes') return sorted.filter((a: any) => a.type === 'airstrike' || a.type === 'danger');
+    if (feedFilter === 'roads') return sorted.filter((a: any) => a.type === 'road_closure');
+    return sorted;
+  }, [filteredAlerts, feedFilter]);
   
   return (
     <motion.div
@@ -976,11 +1001,46 @@ const BottomSheet = ({
             <ChevronRight className="w-5 h-5 text-indigo-500 opacity-50" />
           </motion.button>
 
-          {/* Feed Section — 3 most recent */}
+          {/* Feed Section — Expanded Scrollable History */}
           <div className="space-y-4">
-            <h3 className="text-[9px] font-black uppercase tracking-widest text-zinc-500 px-2">{t.liveSafetyFeed}</h3>
-            <div className="space-y-3">
-              {filteredAlerts.slice(0, 3).map((alert: any) => (
+            <div className="flex items-center justify-between px-2">
+              <h3 className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{t.liveSafetyFeed}</h3>
+              <span className={`text-[8px] font-mono px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-white/5 text-zinc-400' : 'bg-zinc-100 text-zinc-500'}`}>
+                {feedAlerts.length} reports
+              </span>
+            </div>
+
+            {/* Filter Buttons */}
+            <div className="flex gap-2 px-1">
+              {([
+                { id: 'all' as FeedFilter, label: 'All' },
+                { id: 'strikes' as FeedFilter, label: 'Strikes' },
+                { id: 'roads' as FeedFilter, label: 'Roads' },
+              ]).map(btn => (
+                <button
+                  key={btn.id}
+                  onClick={() => setFeedFilter(btn.id)}
+                  className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all border ${
+                    feedFilter === btn.id 
+                      ? btn.id === 'strikes' ? 'bg-danger text-black border-danger' 
+                        : btn.id === 'roads' ? 'bg-warning text-black border-warning' 
+                        : 'bg-white text-black border-white'
+                      : theme === 'dark' ? 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10' : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200'
+                  }`}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Scrollable History Log */}
+            <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-1" style={{ scrollbarWidth: 'thin' }}>
+              {feedAlerts.length === 0 && (
+                <div className={`p-6 rounded-2xl text-center ${theme === 'dark' ? 'bg-white/5' : 'bg-zinc-50'}`}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">No reports for this filter</p>
+                </div>
+              )}
+              {feedAlerts.map((alert: any) => (
                 <motion.div
                   key={alert.id} layout initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
                   onClick={() => setFocusedAlertId(focusedAlertId === alert.id ? null : alert.id)}
@@ -993,7 +1053,7 @@ const BottomSheet = ({
                         <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-safety/10 text-safety border border-safety/30">✓ {t.verified}</span>
                       )}
                     </div>
-                    <span className="text-[8px] font-mono text-zinc-500">{alert.timestamp}</span>
+                    <span className="text-[8px] font-mono text-zinc-500">{timeAgo(alert.createdAt, alert.timestamp)}</span>
                   </div>
                   <div className="flex items-center gap-1 mb-1"><MapPin className="w-3 h-3 text-zinc-500" /><p className={`text-xs font-bold ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>{alert.location}</p></div>
                   <p className="text-[10px] text-zinc-500 leading-relaxed">{alert.message}</p>
