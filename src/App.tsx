@@ -1,4 +1,4 @@
-// App.tsx — Guardian Lebanon — Phase 8: Dynamic Shelter Intelligence
+// App.tsx — Guardian Lebanon — Phase 9: Multi-User Verification System
 // Direct GUARDIAN_DATA[activeCategory] rendering — NO intermediary state
 // lowBandwidthMode: HARD-CODED false — Stability Override
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -12,17 +12,17 @@ import {
   MAP_TILE_URL_DARK, MAP_TILE_URL_LIGHT,
   EMERGENCY_CONTACTS, FILTER_CATEGORIES,
   GUARDIAN_DATA, ALL_MARKERS, MARKER_COLORS, MARKER_EMOJI,
-  AIRSTRIKES, NGOS, getShelterStatus,
+  AIRSTRIKES, NGOS, ROAD_BLOCKS, getShelterStatus, DISPUTE_THRESHOLD,
   type Language, type Theme, type MarkerPoint,
 } from './constants';
 import { useSafetyData, type Alert } from './data/safetyData';
 
 // ─── Build Leaflet DivIcon on the fly ────────────────────────────────────────
-function buildIcon(markerIcon: string, size = 36): L.DivIcon {
+function buildIcon(markerIcon: string, size = 36, opacity = 1): L.DivIcon {
   const bg = MARKER_COLORS[markerIcon] || '#6b7280';
   const emoji = MARKER_EMOJI[markerIcon] || '📍';
   return L.divIcon({
-    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.4)"><span style="font-size:${size * 0.5}px;line-height:1">${emoji}</span></div>`,
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.4);opacity:${opacity}"><span style="font-size:${size * 0.5}px;line-height:1">${emoji}</span></div>`,
     className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
   });
 }
@@ -63,6 +63,10 @@ NGOS.forEach(ngo => {
   SHELTER_ICONS[ngo.id] = buildShelterIcon(ngo);
 });
 
+// Phase 9: Sets to identify verifiable markers
+const AIRSTRIKE_IDS = new Set(AIRSTRIKES.map(a => a.id));
+const ROADBLOCK_IDS = new Set(ROAD_BLOCKS.map(r => r.id));
+
 // ─── MapController ───────────────────────────────────────────────────────────
 function MapController({ center, zoom }: { center: [number, number]; zoom: number }) {
   const map = useMap();
@@ -96,13 +100,17 @@ function timeAgo(ts: number): string {
 }
 
 // Resolve which icon to use for a marker in "all" mode
-function resolveAllIcon(marker: MarkerPoint): L.DivIcon {
-  // Phase 8: check if it's an NGO with shelter data — use status ring icon
+function resolveAllIcon(marker: MarkerPoint, disputeOverrides: Record<string, number>): L.DivIcon {
   if (SHELTER_ICONS[marker.id]) return SHELTER_ICONS[marker.id];
+  // Phase 9: dim markers with > DISPUTE_THRESHOLD disputes
+  const disputes = disputeOverrides[marker.id] ?? marker.disputeCount ?? 0;
+  const isUnverified = disputes > DISPUTE_THRESHOLD;
   for (const cat of FILTER_CATEGORIES) {
     if (cat.id === 'all') continue;
     const arr = GUARDIAN_DATA[cat.id];
-    if (arr && arr.some(m => m.id === marker.id)) return CATEGORY_ICONS[cat.id];
+    if (arr && arr.some(m => m.id === marker.id)) {
+      return isUnverified ? buildIcon(cat.markerIcon, 36, 0.4) : CATEGORY_ICONS[cat.id];
+    }
   }
   return buildIcon('all');
 }
@@ -122,7 +130,6 @@ export default function App() {
   const [showQR, setShowQR] = useState(false);
   const [showEmergency, setShowEmergency] = useState(false);
   const [showIAmSafe, setShowIAmSafe] = useState(false);
-  // ── Stability Override: lowBandwidth HARD-CODED to false ──
   const lowBandwidth = false;
   const [lowPower, setLowPower] = useState(false);
   const [toast, setToast] = useState('');
@@ -139,12 +146,13 @@ export default function App() {
   const [reportDetails, setReportDetails] = useState('');
   const [feedFilter, setFeedFilter] = useState<'all' | 'airstrikes' | 'roads' | 'community'>('all');
   const [selectedDistrict, setSelectedDistrict] = useState('beirut');
-  // Phase 8: Shelter volunteer reports stored in state (persisted via LocalStorage)
+  // Phase 8: Shelter overrides
   const [shelterOverrides, setShelterOverrides] = useState<Record<string, { occupancy: number; lastUpdated: number }>>(() => {
-    try {
-      const raw = localStorage.getItem('guardian-shelter-overrides');
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
+    try { const raw = localStorage.getItem('guardian-shelter-overrides'); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+  });
+  // Phase 9: Verification overrides — track user confirms/disputes per marker ID
+  const [verificationOverrides, setVerificationOverrides] = useState<Record<string, { confirms: number; disputes: number }>>(() => {
+    try { const raw = localStorage.getItem('guardian-verification'); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
   });
 
   const t = TRANSLATIONS[lang];
@@ -171,13 +179,9 @@ export default function App() {
     return () => clearTimeout(id);
   }, [toast]);
 
-  // ── Category change → auto-zoom (ONLY if data exists) ─────────────────────
+  // ── Category change → auto-zoom ───────────────────────────────────────────
   useEffect(() => {
-    if (activeCategory === 'all') {
-      setMapCenter(LEBANON_CENTER);
-      setMapZoom(DEFAULT_ZOOM);
-      return;
-    }
+    if (activeCategory === 'all') { setMapCenter(LEBANON_CENTER); setMapZoom(DEFAULT_ZOOM); return; }
     const points = GUARDIAN_DATA[activeCategory];
     if (points && points.length > 0) {
       const avgLat = points.reduce((s, p) => s + p.coordinates[0], 0) / points.length;
@@ -187,17 +191,13 @@ export default function App() {
     }
   }, [activeCategory]);
 
-  // ── THE DATA TO RENDER — direct from GUARDIAN_DATA, no intermediary ────────
   const markersToRender: MarkerPoint[] = activeCategory === 'all'
-    ? ALL_MARKERS
-    : (GUARDIAN_DATA[activeCategory] || []);
+    ? ALL_MARKERS : (GUARDIAN_DATA[activeCategory] || []);
 
-  // ── Icon for current category ──────────────────────────────────────────────
   const currentIcon: L.DivIcon = activeCategory !== 'all'
-    ? (CATEGORY_ICONS[activeCategory] || buildIcon('all'))
-    : buildIcon('all');
+    ? (CATEGORY_ICONS[activeCategory] || buildIcon('all')) : buildIcon('all');
 
-  // Phase 8: Resolve effective occupancy (volunteer override > static data)
+  // Phase 8: effective occupancy
   const getEffectiveOccupancy = useCallback((marker: MarkerPoint) => {
     const override = shelterOverrides[marker.id];
     return {
@@ -206,24 +206,59 @@ export default function App() {
     };
   }, [shelterOverrides]);
 
-  // Phase 8: Volunteer status report handler
-  const handleShelterReport = useCallback((markerId: string, capacity: number, reportType: 'space' | 'full') => {
-    const newOccupancy = reportType === 'space'
-      ? Math.max(0, Math.round(capacity * 0.5))
-      : Math.min(capacity, Math.round(capacity * 0.97));
-    const updated = { ...shelterOverrides, [markerId]: { occupancy: newOccupancy, lastUpdated: Date.now() } };
+  const handleShelterReport = useCallback((markerId: string, capacity: number, rt: 'space' | 'full') => {
+    const newOcc = rt === 'space' ? Math.max(0, Math.round(capacity * 0.5)) : Math.min(capacity, Math.round(capacity * 0.97));
+    const updated = { ...shelterOverrides, [markerId]: { occupancy: newOcc, lastUpdated: Date.now() } };
     setShelterOverrides(updated);
     try { localStorage.setItem('guardian-shelter-overrides', JSON.stringify(updated)); } catch {}
-    setToast(reportType === 'space' ? `✅ ${t.stillSpace}` : `⚠️ ${t.almostFull}`);
+    setToast(rt === 'space' ? `✅ ${t.stillSpace}` : `⚠️ ${t.almostFull}`);
   }, [shelterOverrides, t]);
+
+  // Phase 9: Compute effective dispute counts (static data + user overrides)
+  const disputeOverrides = useMemo(() => {
+    const map: Record<string, number> = {};
+    [...AIRSTRIKES, ...ROAD_BLOCKS].forEach(m => {
+      const base = m.disputeCount ?? 0;
+      const ov = verificationOverrides[m.id];
+      map[m.id] = base + (ov ? ov.disputes : 0);
+    });
+    return map;
+  }, [verificationOverrides]);
+
+  // Phase 9: Confirm handler — adds verification + contribution toast
+  const handleConfirmReport = useCallback((markerId: string) => {
+    const prev = verificationOverrides[markerId] || { confirms: 0, disputes: 0 };
+    const updated = { ...verificationOverrides, [markerId]: { ...prev, confirms: prev.confirms + 1 } };
+    setVerificationOverrides(updated);
+    try { localStorage.setItem('guardian-verification', JSON.stringify(updated)); } catch {}
+    setToast(t.contributionPoint);
+  }, [verificationOverrides, t]);
+
+  // Phase 9: Dispute handler
+  const handleDisputeReport = useCallback((markerId: string) => {
+    const prev = verificationOverrides[markerId] || { confirms: 0, disputes: 0 };
+    const updated = { ...verificationOverrides, [markerId]: { ...prev, disputes: prev.disputes + 1 } };
+    setVerificationOverrides(updated);
+    try { localStorage.setItem('guardian-verification', JSON.stringify(updated)); } catch {}
+    setToast(t.disputeRecorded);
+  }, [verificationOverrides, t]);
+
+  // Phase 9: Get effective verification data for a marker
+  const getVerificationData = useCallback((marker: MarkerPoint) => {
+    const ov = verificationOverrides[marker.id] || { confirms: 0, disputes: 0 };
+    const totalConfirms = (marker.verificationCount ?? 0) + ov.confirms;
+    const totalDisputes = (marker.disputeCount ?? 0) + ov.disputes;
+    const isUnverified = totalDisputes > DISPUTE_THRESHOLD;
+    const trust = marker.trustScore ?? (totalConfirms > 0 ? Math.min(100, Math.round((totalConfirms / (totalConfirms + totalDisputes)) * 100)) : 0);
+    return { totalConfirms, totalDisputes, isUnverified, trust };
+  }, [verificationOverrides]);
 
   // ── Search ─────────────────────────────────────────────────────────────────
   const searchResults = searchQuery.trim()
     ? locations.filter((l: any) => {
         const q = searchQuery.toLowerCase();
         return l.name.toLowerCase().includes(q) || l.ar.includes(q) || (l.fr && l.fr.toLowerCase().includes(q));
-      }).slice(0, 5)
-    : [];
+      }).slice(0, 5) : [];
 
   // ── Feed ───────────────────────────────────────────────────────────────────
   const feedItems = (() => {
@@ -233,22 +268,18 @@ export default function App() {
     return items.sort((a, b) => b.createdAt - a.createdAt).slice(0, 50);
   })();
 
-  // ── Community Safety Pulse — districts with recent check-ins (<1h) ─────────
+  // ── Community Safety Pulse ─────────────────────────────────────────────────
   const ONE_HOUR = 3600000;
   const activeSafeDistricts = useMemo(() => {
     const now = Date.now();
-    const districtMap: Record<string, { count: number; latestAt: number }> = {};
+    const dMap: Record<string, { count: number; latestAt: number }> = {};
     for (const ci of safeCheckIns) {
       if (now - ci.createdAt > ONE_HOUR) continue;
-      if (!districtMap[ci.districtId]) {
-        districtMap[ci.districtId] = { count: 0, latestAt: ci.createdAt };
-      }
-      districtMap[ci.districtId].count++;
-      if (ci.createdAt > districtMap[ci.districtId].latestAt) {
-        districtMap[ci.districtId].latestAt = ci.createdAt;
-      }
+      if (!dMap[ci.districtId]) dMap[ci.districtId] = { count: 0, latestAt: ci.createdAt };
+      dMap[ci.districtId].count++;
+      if (ci.createdAt > dMap[ci.districtId].latestAt) dMap[ci.districtId].latestAt = ci.createdAt;
     }
-    return districtMap;
+    return dMap;
   }, [safeCheckIns]);
 
   // ── Route ──────────────────────────────────────────────────────────────────
@@ -277,7 +308,6 @@ export default function App() {
     setIsRouting(false);
   }, [routeStart, routeEnd, t]);
 
-  // ── Report ─────────────────────────────────────────────────────────────────
   const submitReport = useCallback(() => {
     const dt = DANGER_TYPES[reportType];
     addAlert({
@@ -289,7 +319,6 @@ export default function App() {
     setShowReport(false); setReportDetails(''); setToast(t.submitted);
   }, [reportType, reportDetails, userLocation, addAlert, t]);
 
-  // ── I AM SAFE ──────────────────────────────────────────────────────────────
   const handleIAmSafe = useCallback(() => {
     addSafeCheckIn(selectedDistrict);
     const distName = DISTRICT_NAMES[selectedDistrict]?.[lang] || selectedDistrict;
@@ -304,32 +333,25 @@ export default function App() {
   const textSub = isDark ? 'text-gray-400' : 'text-gray-500';
   const border = isDark ? 'border-white/10' : 'border-gray-200';
 
-  // ── Phase 8: Shelter Capacity Popup Builder ────────────────────────────────
+  // ── Phase 8: Shelter Popup Builder ─────────────────────────────────────────
   const renderShelterPopup = (marker: MarkerPoint) => {
     const { occupancy: occ, lastUpdated: lu } = getEffectiveOccupancy(marker);
     const cap = marker.capacity ?? 0;
     const status = getShelterStatus(occ, cap);
-    const pctDisplay = Math.round(status.percent * 100);
-    const statusLabel = status.label === 'open' ? t.shelterOpen
-      : status.label === 'limited' ? t.shelterLimited : t.shelterFull;
-
+    const pct = Math.round(status.percent * 100);
+    const label = status.label === 'open' ? t.shelterOpen : status.label === 'limited' ? t.shelterLimited : t.shelterFull;
     return (
-      <div className="text-xs min-w-[200px]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+      <div className="text-xs min-w-[200px]">
         <strong className="block text-sm">{marker.name}</strong>
         {marker.aidType && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-100 text-cyan-700 inline-block mt-1">{marker.aidType}</span>}
-
-        {/* ── Capacity Progress Bar ── */}
         {cap > 0 && (
           <div className="mt-2">
             <div className="flex justify-between items-center mb-1">
               <span className="font-bold text-[10px]">{t.shelterCapacity}</span>
-              <span className="text-[10px] font-black" style={{ color: status.color }}>{statusLabel} — {pctDisplay}%</span>
+              <span className="text-[10px] font-black" style={{ color: status.color }}>{label} — {pct}%</span>
             </div>
             <div className="w-full h-2.5 rounded-full bg-gray-200 overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${pctDisplay}%`, background: status.color }}
-              />
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: status.color }} />
             </div>
             <div className="flex justify-between mt-1 text-[9px] text-gray-500">
               <span>{t.occupancy}: {occ}/{cap}</span>
@@ -337,31 +359,63 @@ export default function App() {
             </div>
           </div>
         )}
-
         {marker.hours && <span className="block text-gray-400 mt-1">🕐 {marker.hours}</span>}
-        {marker.status && (
-          <span className={`block mt-1 ${marker.status === 'open' ? 'text-green-600' : 'text-red-500'}`}>
-            {marker.status === 'open' ? t.open : t.closed}
-          </span>
-        )}
-
-        {/* ── Phase 8: Volunteer Report Buttons ── */}
         {cap > 0 && (
           <div className="flex gap-1.5 mt-2 pt-2 border-t border-gray-200">
-            <button
-              onClick={() => handleShelterReport(marker.id, cap, 'space')}
-              className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 transition-colors"
-            >
-              👍 {t.stillSpace}
-            </button>
-            <button
-              onClick={() => handleShelterReport(marker.id, cap, 'full')}
-              className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
-            >
-              🚫 {t.almostFull}
-            </button>
+            <button onClick={() => handleShelterReport(marker.id, cap, 'space')}
+              className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200">👍 {t.stillSpace}</button>
+            <button onClick={() => handleShelterReport(marker.id, cap, 'full')}
+              className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200">🚫 {t.almostFull}</button>
           </div>
         )}
+      </div>
+    );
+  };
+
+  // ── Phase 9: Verifiable Popup Builder (Airstrikes + Road Blocks) ───────────
+  const renderVerifiablePopup = (marker: MarkerPoint) => {
+    const vd = getVerificationData(marker);
+    const trustColor = vd.trust >= 70 ? '#22c55e' : vd.trust >= 40 ? '#f97316' : '#ef4444';
+    return (
+      <div className="text-xs min-w-[200px]">
+        <strong className="block text-sm">{marker.name}</strong>
+        {marker.message && <p className="mt-1 text-gray-600">{marker.message}</p>}
+
+        {/* Phase 9: Unverified warning */}
+        {vd.isUnverified && (
+          <div className="mt-1.5 px-2 py-1 rounded-lg bg-yellow-100 border border-yellow-400 text-yellow-800 text-[10px] font-black">
+            {t.unverified}
+          </div>
+        )}
+
+        {/* Trust Score bar */}
+        <div className="mt-2">
+          <div className="flex justify-between items-center mb-1">
+            <span className="font-bold text-[10px]">{t.trustScore}</span>
+            <span className="text-[10px] font-black" style={{ color: trustColor }}>{vd.trust}%</span>
+          </div>
+          <div className="w-full h-2 rounded-full bg-gray-200 overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${vd.trust}%`, background: trustColor }} />
+          </div>
+          <div className="flex justify-between mt-1 text-[9px] text-gray-500">
+            <span>✅ {vd.totalConfirms} {t.confirmations}</span>
+            <span>❌ {vd.totalDisputes} {t.disputes}</span>
+          </div>
+        </div>
+
+        {marker.verified && <span className="block mt-1 text-green-500 text-[10px]">{t.verified}</span>}
+
+        {/* Phase 9: Confirm / Dispute buttons */}
+        <div className="flex gap-1.5 mt-2 pt-2 border-t border-gray-200">
+          <button onClick={() => handleConfirmReport(marker.id)}
+            className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 transition-colors">
+            ✅ {t.confirmReport}
+          </button>
+          <button onClick={() => handleDisputeReport(marker.id)}
+            className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition-colors">
+            ❌ {t.disputeReport}
+          </button>
+        </div>
       </div>
     );
   };
@@ -374,20 +428,14 @@ export default function App() {
 
       {/* ─── MAP ──────────────────────────────────────────────────────── */}
       <MapContainer
-        center={LEBANON_CENTER}
-        zoom={DEFAULT_ZOOM}
+        center={LEBANON_CENTER} zoom={DEFAULT_ZOOM}
         style={{ height: '100dvh', width: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}
-        maxBounds={LEBANON_BOUNDS}
-        maxBoundsViscosity={0.8}
-        zoomControl={false}
-        attributionControl={false}
+        maxBounds={LEBANON_BOUNDS} maxBoundsViscosity={0.8}
+        zoomControl={false} attributionControl={false}
       >
         <MapController center={mapCenter} zoom={mapZoom} />
-
-        {/* TILE LAYER — ALWAYS RENDERED, HARDCODED, NO CONDITIONAL */}
         <TileLayer url={isDark ? MAP_TILE_URL_DARK : MAP_TILE_URL_LIGHT} />
 
-        {/* USER LOCATION */}
         {userLocation && (
           <Marker position={userLocation} icon={USER_ICON}>
             <Popup><strong>📍 {t.shareLocation}</strong></Popup>
@@ -396,46 +444,52 @@ export default function App() {
 
         {/* ═══ CATEGORY MARKERS — DIRECT FROM GUARDIAN_DATA ═══ */}
         {markersToRender.map(marker => {
-          // Phase 8: use shelter status ring icon for NGOs
-          const isNgo = NGOS.some(n => n.id === marker.id);
-          const icon = activeCategory === 'all'
-            ? resolveAllIcon(marker)
-            : isNgo ? (SHELTER_ICONS[marker.id] || currentIcon) : currentIcon;
+          const isNgo = SHELTER_ICONS[marker.id] != null;
+          const isVerifiable = AIRSTRIKE_IDS.has(marker.id) || ROADBLOCK_IDS.has(marker.id);
+          // Phase 9: dim markers with too many disputes
+          const disputes = disputeOverrides[marker.id] ?? 0;
+          const isDimmed = isVerifiable && disputes > DISPUTE_THRESHOLD;
+
+          const icon = (() => {
+            if (isNgo) return SHELTER_ICONS[marker.id] || currentIcon;
+            if (activeCategory === 'all') return resolveAllIcon(marker, disputeOverrides);
+            return isDimmed ? buildIcon(FILTER_CATEGORIES.find(f => f.id === activeCategory)?.markerIcon || 'all', 36, 0.4) : currentIcon;
+          })();
 
           return (
             <Marker key={marker.id} position={marker.coordinates} icon={icon}>
               <Popup>
-                {/* Phase 8: enhanced popup for shelters, standard for others */}
-                {isNgo && marker.capacity ? renderShelterPopup(marker) : (
-                  <div className="text-xs min-w-[160px]">
-                    <strong>{marker.name}</strong>
-                    {marker.message && <p className="mt-1 text-gray-600">{marker.message}</p>}
-                    {marker.status && (
-                      <span className={`block mt-1 ${marker.status === 'open' ? 'text-green-600' : 'text-red-500'}`}>
-                        {marker.status === 'open' ? t.open : t.closed}
-                      </span>
-                    )}
-                    {marker.hours && <span className="block text-gray-400">🕐 {marker.hours}</span>}
-                    {marker.phone && <a href={`tel:${marker.phone}`} className="block mt-1 text-blue-500 font-bold">📞 {marker.phone}</a>}
-                    {marker.verified && <span className="block mt-1 text-green-500">{t.verified} ({marker.verificationCount})</span>}
-                  </div>
-                )}
+                {isNgo && marker.capacity ? renderShelterPopup(marker)
+                  : isVerifiable ? renderVerifiablePopup(marker)
+                  : (
+                    <div className="text-xs min-w-[160px]">
+                      <strong>{marker.name}</strong>
+                      {marker.message && <p className="mt-1 text-gray-600">{marker.message}</p>}
+                      {marker.status && (
+                        <span className={`block mt-1 ${marker.status === 'open' ? 'text-green-600' : 'text-red-500'}`}>
+                          {marker.status === 'open' ? t.open : t.closed}
+                        </span>
+                      )}
+                      {marker.hours && <span className="block text-gray-400">🕐 {marker.hours}</span>}
+                      {marker.phone && <a href={`tel:${marker.phone}`} className="block mt-1 text-blue-500 font-bold">📞 {marker.phone}</a>}
+                      {marker.verified && <span className="block mt-1 text-green-500">{t.verified} ({marker.verificationCount})</span>}
+                    </div>
+                  )}
               </Popup>
             </Marker>
           );
         })}
 
-        {/* ═══ PHASE 7: GREEN PULSE MARKERS — Community Safety ═══ */}
+        {/* Green Pulse Community Markers */}
         {Object.entries(activeSafeDistricts).map(([districtId, { count }]) => {
           const coords = DISTRICT_COORDINATES[districtId];
           if (!coords) return null;
-          const distName = DISTRICT_NAMES[districtId]?.[lang] || districtId;
           return (
             <Marker key={`safe-${districtId}`} position={coords} icon={buildSafePulseIcon(count)}>
               <Popup>
                 <div className="text-xs min-w-[140px] text-center">
                   <strong className="text-green-600">💚 {t.communityPulse}</strong>
-                  <p className="mt-1 font-bold">{distName}</p>
+                  <p className="mt-1 font-bold">{DISTRICT_NAMES[districtId]?.[lang] || districtId}</p>
                   <p className="text-green-500 font-bold mt-0.5">{count} {t.recentSafe}</p>
                 </div>
               </Popup>
@@ -443,7 +497,6 @@ export default function App() {
           );
         })}
 
-        {/* ROUTE */}
         {routeCoords && <Polyline positions={routeCoords} pathOptions={{ color: '#3B82F6', weight: 4, dashArray: '10 6', opacity: 0.9 }} />}
       </MapContainer>
 
@@ -510,10 +563,10 @@ export default function App() {
         </div>
       </div>
 
-      {/* ─── TOAST ────────────────────────────────────────────────────── */}
+      {/* Toast */}
       {toast && <div className="absolute top-[140px] left-1/2 -translate-x-1/2 z-[2000] bg-black/80 text-white text-sm px-4 py-2 rounded-xl backdrop-blur-md animate-pulse">{toast}</div>}
 
-      {/* ─── ROUTING ──────────────────────────────────────────────────── */}
+      {/* Routing */}
       {showRouting && (
         <div className={`absolute bottom-14 left-3 right-3 z-[1001] ${surface} rounded-2xl border ${border} p-4 shadow-2xl`}>
           <div className="flex justify-between items-center mb-3">
@@ -544,7 +597,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ─── REPORT ───────────────────────────────────────────────────── */}
+      {/* Report */}
       {showReport && (
         <div className="absolute inset-0 z-[2000] bg-black/60 flex items-end" onClick={() => setShowReport(false)}>
           <div className={`w-full max-w-md mx-auto ${surface} rounded-t-3xl p-5 border-t ${border}`} onClick={e => e.stopPropagation()}>
@@ -565,7 +618,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ─── SETTINGS ─────────────────────────────────────────────────── */}
+      {/* Settings */}
       {showSettings && (
         <div className="absolute inset-0 z-[2000] bg-black/60" onClick={() => setShowSettings(false)}>
           <div className={`absolute ${isRtl ? 'left-0' : 'right-0'} top-0 bottom-0 w-72 ${surface} border-l ${border} p-5`} onClick={e => e.stopPropagation()}>
@@ -588,9 +641,7 @@ export default function App() {
                 </button>
               ))}
             </div>
-            {[
-              { label: t.lowPower, state: lowPower, setter: setLowPower },
-            ].map((tog, i) => (
+            {[{ label: t.lowPower, state: lowPower, setter: setLowPower }].map((tog, i) => (
               <div key={i} className="flex items-center justify-between mb-3">
                 <span className="text-xs font-semibold">{tog.label}</span>
                 <button onClick={() => tog.setter(!tog.state)}
@@ -607,7 +658,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ═══ PHASE 7: "I AM SAFE" MODAL ═══ */}
+      {/* I AM SAFE Modal */}
       {showIAmSafe && (
         <div className="absolute inset-0 z-[2000] bg-black/60 flex items-end" onClick={() => setShowIAmSafe(false)}>
           <div className={`w-full max-w-md mx-auto ${surface} rounded-t-3xl p-5 border-t ${border}`} onClick={e => e.stopPropagation()}>
@@ -630,9 +681,7 @@ export default function App() {
                       : `${isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-gray-50 hover:bg-gray-100'} border ${border}`
                   }`}>
                   <span className="block text-sm mb-0.5">{names[lang]}</span>
-                  {activeSafeDistricts[id] && (
-                    <span className="text-[9px] text-green-500">💚 {activeSafeDistricts[id].count} safe</span>
-                  )}
+                  {activeSafeDistricts[id] && <span className="text-[9px] text-green-500">💚 {activeSafeDistricts[id].count} safe</span>}
                 </button>
               ))}
             </div>
@@ -656,7 +705,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ─── FEED ─────────────────────────────────────────────────────── */}
+      {/* Feed */}
       {showFeed && (
         <div className="absolute inset-0 z-[2000] bg-black/60" onClick={() => setShowFeed(false)}>
           <div className={`absolute bottom-0 left-0 right-0 max-h-[70vh] ${surface} rounded-t-3xl border-t ${border} overflow-hidden`} onClick={e => e.stopPropagation()}>
@@ -666,17 +715,10 @@ export default function App() {
                 <button onClick={() => setShowFeed(false)} className="text-xs opacity-60">{t.close} ✕</button>
               </div>
               <div className="flex gap-2">
-                {([
-                  ['all', t.feedAll],
-                  ['airstrikes', t.feedAirstrikes],
-                  ['roads', t.feedRoads],
-                  ['community', t.communityTab],
-                ] as const).map(([key, label]) => (
+                {([['all', t.feedAll], ['airstrikes', t.feedAirstrikes], ['roads', t.feedRoads], ['community', t.communityTab]] as const).map(([key, label]) => (
                   <button key={key} onClick={() => setFeedFilter(key as any)}
                     className={`px-3 py-1 rounded-full text-[10px] font-bold ${
-                      feedFilter === key
-                        ? key === 'community' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-                        : isDark ? 'bg-white/10' : 'bg-gray-200'
+                      feedFilter === key ? key === 'community' ? 'bg-green-500 text-white' : 'bg-red-500 text-white' : isDark ? 'bg-white/10' : 'bg-gray-200'
                     }`}>
                     {key === 'community' ? `💚 ${label}` : label}
                   </button>
@@ -685,54 +727,46 @@ export default function App() {
             </div>
             <div className="overflow-y-auto max-h-[55vh] p-3 space-y-2">
               {feedFilter === 'community' ? (
-                safeCheckIns.length > 0 ? (
-                  safeCheckIns.slice(0, 30).map(ci => {
-                    const distName = DISTRICT_NAMES[ci.districtId]?.[lang] || ci.districtId;
-                    return (
-                      <div key={ci.id} className={`p-3 rounded-xl ${isDark ? 'bg-green-500/5' : 'bg-green-50'} border border-green-500/20`}>
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm">💚</span>
-                            <span className="text-xs font-bold">
-                              {ci.userId} <span className="font-normal opacity-70">{t.communityCheckIn}</span>{' '}
-                              <span className="text-green-400 font-bold">{distName}</span>
-                            </span>
-                          </div>
-                          <span className="text-[10px] opacity-50">{timeAgo(ci.createdAt)}</span>
-                        </div>
+                safeCheckIns.length > 0 ? safeCheckIns.slice(0, 30).map(ci => (
+                  <div key={ci.id} className={`p-3 rounded-xl ${isDark ? 'bg-green-500/5' : 'bg-green-50'} border border-green-500/20`}>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">💚</span>
+                        <span className="text-xs font-bold">
+                          {ci.userId} <span className="font-normal opacity-70">{t.communityCheckIn}</span>{' '}
+                          <span className="text-green-400 font-bold">{DISTRICT_NAMES[ci.districtId]?.[lang] || ci.districtId}</span>
+                        </span>
                       </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-center py-8 opacity-40 text-sm">{t.communityPulse}: No check-ins yet</div>
-                )
-              ) : (
-                feedItems.map(item => (
-                  <div key={item.id} className={`p-3 rounded-xl ${isDark ? 'bg-white/5' : 'bg-gray-50'} border ${border}`}>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <span className="text-xs font-bold">{item.type === 'road_closure' ? '🚧' : '💥'} {item.location}</span>
-                        <p className="text-[10px] mt-0.5 opacity-70">{item.message}</p>
-                      </div>
-                      <span className="text-[10px] opacity-50">{timeAgo(item.createdAt)}</span>
+                      <span className="text-[10px] opacity-50">{timeAgo(ci.createdAt)}</span>
                     </div>
-                    {item.verified && <span className="text-[9px] text-green-400 mt-1 block">{t.verified} • {item.verificationCount} {t.votes}</span>}
-                    {item.type === 'road_closure' && (
-                      <div className="flex gap-2 mt-2">
-                        <button onClick={() => updateAlert(item.id, { verificationCount: (item.verificationCount || 0) + 1 })}
-                          className="text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-400">👍 Confirm</button>
-                        <button className="text-[10px] px-2 py-0.5 rounded bg-red-500/20 text-red-400">👎 Deny</button>
-                      </div>
-                    )}
                   </div>
-                ))
-              )}
+                )) : <div className="text-center py-8 opacity-40 text-sm">{t.communityPulse}: No check-ins yet</div>
+              ) : feedItems.map(item => (
+                <div key={item.id} className={`p-3 rounded-xl ${isDark ? 'bg-white/5' : 'bg-gray-50'} border ${border}`}>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-xs font-bold">{item.type === 'road_closure' ? '🚧' : '💥'} {item.location}</span>
+                      <p className="text-[10px] mt-0.5 opacity-70">{item.message}</p>
+                    </div>
+                    <span className="text-[10px] opacity-50">{timeAgo(item.createdAt)}</span>
+                  </div>
+                  {item.verified && <span className="text-[9px] text-green-400 mt-1 block">{t.verified} • {item.verificationCount} {t.votes}</span>}
+                  {(item.type === 'road_closure' || item.type === 'danger') && (
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={() => updateAlert(item.id, { verificationCount: (item.verificationCount || 0) + 1 })}
+                        className="text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-400">✅ {t.confirmReport}</button>
+                      <button onClick={() => updateAlert(item.id, { verificationCount: Math.max(0, (item.verificationCount || 0) - 1) })}
+                        className="text-[10px] px-2 py-0.5 rounded bg-red-500/20 text-red-400">❌ {t.disputeReport}</button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </div>
       )}
 
-      {/* ─── SOS ──────────────────────────────────────────────────────── */}
+      {/* SOS */}
       {showEmergency && (
         <div className="absolute inset-0 z-[2000] bg-black/70" onClick={() => setShowEmergency(false)}>
           <div className={`absolute bottom-0 left-0 right-0 ${surface} rounded-t-3xl border-t ${border} p-5`} onClick={e => e.stopPropagation()}>
@@ -753,7 +787,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ─── QR ───────────────────────────────────────────────────────── */}
+      {/* QR */}
       {showQR && (
         <div className="absolute inset-0 z-[2000] bg-black/70 flex items-center justify-center" onClick={() => setShowQR(false)}>
           <div className={`${surface} rounded-2xl p-6 border ${border} text-center`} onClick={e => e.stopPropagation()}>

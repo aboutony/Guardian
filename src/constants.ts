@@ -32,7 +32,14 @@ export interface MarkerPoint {
   capacity?: number;     // total shelter capacity (beds/slots)
   occupancy?: number;    // current occupancy count
   lastUpdated?: number;  // timestamp of last volunteer report
+  // Phase 9: Multi-User Verification
+  trustScore?: number;   // 0-100 trust rating (higher = more verified)
+  disputeCount?: number; // number of user disputes
 }
+
+// ─── Verification Thresholds ─────────────────────────────────────────────────
+// Reports with > DISPUTE_THRESHOLD disputes are marked UNVERIFIED (40% opacity)
+export const DISPUTE_THRESHOLD = 5;
 
 // ─── Shelter Status Thresholds ───────────────────────────────────────────────
 // 0-70% → Open (Green) | 71-95% → Limited (Orange) | 96-100% → Full (Red)
@@ -68,11 +75,11 @@ export const HOSPITALS: MarkerPoint[] = [
 ];
 
 export const AIRSTRIKES: MarkerPoint[] = [
-  { id: 'a1', name: 'Haret Hreik Strike', coordinates: [33.848, 35.505], message: 'Confirmed Air Strike - Avoid Area', verified: true, verificationCount: 12 },
-  { id: 'a2', name: 'Tyre Coast Shelling', coordinates: [33.271, 35.196], message: 'Heavy Shelling Reported', verified: true, verificationCount: 8 },
-  { id: 'a3', name: 'Baalbek Center Evacuation', coordinates: [34.006, 36.202], message: 'Immediate Evacuation Order', verified: true, verificationCount: 15 },
-  { id: 'a4', name: 'Dahieh Southern Suburb', coordinates: [33.838, 35.502], message: 'Multiple strikes confirmed', verified: true, verificationCount: 20 },
-  { id: 'a5', name: 'Nabatieh Market Shelling', coordinates: [33.376, 35.480], message: 'Market area shelled', verified: true, verificationCount: 10 },
+  { id: 'a1', name: 'Haret Hreik Strike', coordinates: [33.848, 35.505], message: 'Confirmed Air Strike - Avoid Area', verified: true, verificationCount: 12, trustScore: 92, disputeCount: 1 },
+  { id: 'a2', name: 'Tyre Coast Shelling', coordinates: [33.271, 35.196], message: 'Heavy Shelling Reported', verified: true, verificationCount: 8, trustScore: 78, disputeCount: 2 },
+  { id: 'a3', name: 'Baalbek Center Evacuation', coordinates: [34.006, 36.202], message: 'Immediate Evacuation Order', verified: true, verificationCount: 15, trustScore: 95, disputeCount: 0 },
+  { id: 'a4', name: 'Dahieh Southern Suburb', coordinates: [33.838, 35.502], message: 'Multiple strikes confirmed', verified: true, verificationCount: 20, trustScore: 98, disputeCount: 0 },
+  { id: 'a5', name: 'Nabatieh Market Shelling', coordinates: [33.376, 35.480], message: 'Market area shelled', verified: false, verificationCount: 3, trustScore: 35, disputeCount: 4 },
 ];
 
 export const BAKERIES: MarkerPoint[] = [
@@ -115,11 +122,11 @@ export const NGOS: MarkerPoint[] = [
 ];
 
 export const ROAD_BLOCKS: MarkerPoint[] = [
-  { id: 'rc1', name: 'Qasmiyeh Bridge', coordinates: [33.318, 35.265], message: 'Bridge closed - structural damage', verified: true, verificationCount: 9, roadOpen: false },
-  { id: 'rc2', name: 'Jiyyeh Highway', coordinates: [33.669, 35.408], message: 'Highway blocked - shelling debris', verified: true, verificationCount: 6, roadOpen: false },
-  { id: 'rc3', name: 'Damour Tunnel', coordinates: [33.733, 35.450], message: 'Tunnel partially collapsed', verified: false, verificationCount: 2, roadOpen: false },
-  { id: 'rc4', name: 'Litani Bridge', coordinates: [33.352, 35.485], message: 'Bridge closed by ISF', verified: true, verificationCount: 11, roadOpen: false },
-  { id: 'rc5', name: 'Saida North Road', coordinates: [33.572, 35.381], message: 'Road blocked - use alternate', verified: false, verificationCount: 1, roadOpen: false },
+  { id: 'rc1', name: 'Qasmiyeh Bridge', coordinates: [33.318, 35.265], message: 'Bridge closed - structural damage', verified: true, verificationCount: 9, roadOpen: false, trustScore: 88, disputeCount: 1 },
+  { id: 'rc2', name: 'Jiyyeh Highway', coordinates: [33.669, 35.408], message: 'Highway blocked - shelling debris', verified: true, verificationCount: 6, roadOpen: false, trustScore: 72, disputeCount: 3 },
+  { id: 'rc3', name: 'Damour Tunnel', coordinates: [33.733, 35.450], message: 'Tunnel partially collapsed', verified: false, verificationCount: 2, roadOpen: false, trustScore: 28, disputeCount: 7 },
+  { id: 'rc4', name: 'Litani Bridge', coordinates: [33.352, 35.485], message: 'Bridge closed by ISF', verified: true, verificationCount: 11, roadOpen: false, trustScore: 91, disputeCount: 0 },
+  { id: 'rc5', name: 'Saida North Road', coordinates: [33.572, 35.381], message: 'Road blocked - use alternate', verified: false, verificationCount: 1, roadOpen: false, trustScore: 15, disputeCount: 6 },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -254,6 +261,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     shelterCapacity: 'Current Capacity', shelterFull: 'FULL', shelterLimited: 'Limited',
     shelterOpen: 'Available', reportStatus: 'Report Status', occupancy: 'Occupancy',
     lastUpdate: 'Last update', stillSpace: 'Still has space', almostFull: 'Almost full',
+    confirmReport: 'Confirm', disputeReport: 'Dispute', unverified: '⚠️ UNVERIFIED',
+    trustScore: 'Trust Score', contributionPoint: '⭐ Contribution Points +1',
+    disputeRecorded: '❌ Dispute recorded', confirmations: 'confirmations', disputes: 'disputes',
   },
   ar: {
     appName: 'الحارس', searchPlaceholder: 'ابحث عن قرية، مدينة أو عنوان...',
@@ -281,6 +291,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     shelterCapacity: 'السعة الحالية', shelterFull: 'ممتلئ', shelterLimited: 'محدود',
     shelterOpen: 'متاح', reportStatus: 'بلّغ عن الحالة', occupancy: 'الإشغال',
     lastUpdate: 'آخر تحديث', stillSpace: 'لا يزال متاحاً', almostFull: 'شبه ممتلئ',
+    confirmReport: 'تأكيد', disputeReport: 'اعتراض', unverified: '⚠️ غير موثّق',
+    trustScore: 'مؤشر الثقة', contributionPoint: '⭐ نقاط المساهمة +1',
+    disputeRecorded: '❌ تم تسجيل الاعتراض', confirmations: 'تأكيدات', disputes: 'اعتراضات',
   },
   fr: {
     appName: 'GUARDIAN', searchPlaceholder: 'Chercher village, ville ou adresse...',
@@ -308,5 +321,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     shelterCapacity: 'Capacité actuelle', shelterFull: 'COMPLET', shelterLimited: 'Limité',
     shelterOpen: 'Disponible', reportStatus: 'Signaler état', occupancy: 'Occupation',
     lastUpdate: 'Dernière MAJ', stillSpace: 'Encore de la place', almostFull: 'Presque plein',
+    confirmReport: 'Confirmer', disputeReport: 'Contester', unverified: '⚠️ NON VÉRIFIÉ',
+    trustScore: 'Score de confiance', contributionPoint: '⭐ Points de contribution +1',
+    disputeRecorded: '❌ Contestation enregistrée', confirmations: 'confirmations', disputes: 'contestations',
   },
 };
