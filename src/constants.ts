@@ -1,4 +1,4 @@
-// constants.ts — Guardian Lebanon — Phase 11: Predictive Danger Heatmaps
+// constants.ts — Guardian Lebanon — Phase 12: Family Safety Circles
 // All static data, category arrays, translations, map config
 
 export type Language = 'en' | 'ar' | 'fr';
@@ -38,6 +38,28 @@ export interface MarkerPoint {
   // Phase 11: Heatmap weight — influences risk intensity (0.0 - 1.0)
   weight?: number;
 }
+
+// ─── Phase 12: Family Safety Circles ─────────────────────────────────────────
+export interface FamilyMember {
+  id: string;
+  name: string;
+  coordinates: [number, number];
+  lastSeen: number;  // timestamp
+  status: 'safe' | 'unknown' | 'danger';
+  emoji: string;
+}
+
+export const MOCK_FAMILY: FamilyMember[] = [
+  { id: 'fam1', name: 'Nour', coordinates: [33.892, 35.508], lastSeen: Date.now() - 600000, status: 'safe', emoji: '👩' },
+  { id: 'fam2', name: 'Karim', coordinates: [33.855, 35.502], lastSeen: Date.now() - 1800000, status: 'unknown', emoji: '👨' },
+  { id: 'fam3', name: 'Teta Layla', coordinates: [33.380, 35.486], lastSeen: Date.now() - 7200000, status: 'unknown', emoji: '👵' },
+];
+
+export const PRIVACY_POLICY: Record<Language, string> = {
+  en: 'Family location data is stored locally on your device and is never shared with third parties. Circle codes are end-to-end private.',
+  ar: 'بيانات موقع العائلة مخزّنة محلياً على جهازك ولا تُشارَك مع أطراف ثالثة. رموز الدائرة مشفّرة بالكامل.',
+  fr: "Les données de localisation familiale sont stockées localement sur votre appareil et ne sont jamais partagées avec des tiers. Les codes de cercle sont privés de bout en bout.",
+};
 
 // ─── Verification Thresholds ─────────────────────────────────────────────────
 export const DISPUTE_THRESHOLD = 5;
@@ -188,13 +210,13 @@ export const FILTER_CATEGORIES = [
 export const MARKER_COLORS: Record<string, string> = {
   airstrike: '#dc2626', hospital: '#2563eb', bakery: '#a16207', pharmacy: '#7c3aed',
   fuel: '#059669', ngo: '#0891b2', road_block: '#ea580c', user: '#3b82f6',
-  all: '#6b7280', safe_pulse: '#22c55e',
+  all: '#6b7280', safe_pulse: '#22c55e', family_member: '#8b5cf6',
 };
 
 export const MARKER_EMOJI: Record<string, string> = {
   airstrike: '💥', hospital: '🏥', bakery: '🍞', pharmacy: '💊',
   fuel: '⛽', ngo: '🤝', road_block: '🚧', user: '📍',
-  all: '📍', safe_pulse: '💚',
+  all: '📍', safe_pulse: '💚', family_member: '👨‍👩‍👧',
 };
 
 // ─── District Coords ─────────────────────────────────────────────────────────
@@ -328,6 +350,21 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     riskHeatmap: 'Risk Heatmap',
     heatmapActive: '🔥 Heatmap active',
     heatmapOff: 'Heatmap off',
+    // ── Phase 12: Family Safety Circles ────────
+    familySafety: 'Family',
+    familyCircle: 'Family Safety Circle',
+    familyMembers: 'Members',
+    joinCircle: 'Join Circle',
+    createCircle: 'Create Circle',
+    circleCode: 'Circle Code',
+    enterCode: 'Enter 6-digit code',
+    joinSuccess: '✅ Joined family circle!',
+    createSuccess: '✅ Circle created!',
+    lastSeen: 'Last seen',
+    memberSafe: '✅ Safe',
+    memberUnknown: '❓ Unknown',
+    memberDanger: '🚨 In Danger',
+    privacyNote: 'Privacy',
   },
   ar: {
     appName: 'GUARDIAN',
@@ -404,6 +441,20 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     riskHeatmap: 'خريطة المخاطر',
     heatmapActive: '🔥 خريطة الحرارة نشطة',
     heatmapOff: 'إيقاف خريطة الحرارة',
+    familySafety: 'العائلة',
+    familyCircle: 'دائرة أمان العائلة',
+    familyMembers: 'الأعضاء',
+    joinCircle: 'انضم إلى دائرة',
+    createCircle: 'أنشئ دائرة',
+    circleCode: 'رمز الدائرة',
+    enterCode: 'أدخل الرمز المكون من 6 أرقام',
+    joinSuccess: '✅ انضممت إلى دائرة العائلة!',
+    createSuccess: '✅ تم إنشاء الدائرة!',
+    lastSeen: 'آخر ظهور',
+    memberSafe: '✅ بأمان',
+    memberUnknown: '❓ غير معروف',
+    memberDanger: '🚨 في خطر',
+    privacyNote: 'الخصوصية',
   },
   fr: {
     appName: 'GUARDIAN',
@@ -480,5 +531,19 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     riskHeatmap: 'Carte de risque',
     heatmapActive: '🔥 Carte thermique active',
     heatmapOff: 'Carte thermique désactivée',
+    familySafety: 'Famille',
+    familyCircle: 'Cercle de sécurité familial',
+    familyMembers: 'Membres',
+    joinCircle: 'Rejoindre un cercle',
+    createCircle: 'Créer un cercle',
+    circleCode: 'Code du cercle',
+    enterCode: 'Entrez un code à 6 chiffres',
+    joinSuccess: '✅ Cercle familial rejoint!',
+    createSuccess: '✅ Cercle créé!',
+    lastSeen: 'Vu',
+    memberSafe: '✅ En sécurité',
+    memberUnknown: '❓ Inconnu',
+    memberDanger: '🚨 En danger',
+    privacyNote: 'Confidentialité',
   },
 };

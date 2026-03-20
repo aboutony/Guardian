@@ -1,4 +1,4 @@
-// App.tsx — Guardian Lebanon — Phase 11: Predictive Danger Heatmaps
+// App.tsx — Guardian Lebanon — Phase 12: Family Safety Circles
 // GUARDIAN_DATA unified engine — lowBandwidthMode HARD-CODED false
 // Antigravity Editor approved
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -14,8 +14,9 @@ import {
   EMERGENCY_CONTACTS, FILTER_CATEGORIES,
   GUARDIAN_DATA, ALL_MARKERS, MARKER_COLORS, MARKER_EMOJI,
   AIRSTRIKES, NGOS, ROAD_BLOCKS, SEISMIC_DATA,
+  MOCK_FAMILY, PRIVACY_POLICY,
   getShelterStatus, DISPUTE_THRESHOLD, detectBrowserLanguage,
-  type Language, type Theme, type MarkerPoint,
+  type Language, type Theme, type MarkerPoint, type FamilyMember,
 } from './constants';
 import { useSafetyData, type Alert } from './data/safetyData';
 
@@ -54,6 +55,17 @@ const SHELTER_ICONS: Record<string, L.DivIcon> = {};
 NGOS.forEach(ngo => { SHELTER_ICONS[ngo.id] = buildShelterIcon(ngo); });
 const AIRSTRIKE_IDS = new Set(AIRSTRIKES.map(a => a.id));
 const ROADBLOCK_IDS = new Set(ROAD_BLOCKS.map(r => r.id));
+
+// ─── Phase 12: Family Member Icon — distinct purple marker with member emoji ─
+function buildFamilyIcon(member: FamilyMember): L.DivIcon {
+  const size = 40;
+  const bg = member.status === 'safe' ? '#22c55e' : member.status === 'danger' ? '#ef4444' : '#8b5cf6';
+  const ring = member.status === 'safe' ? '0 0 0 4px rgba(34,197,94,0.3)' : member.status === 'danger' ? '0 0 0 4px rgba(239,68,68,0.3)' : '0 0 0 3px rgba(139,92,246,0.2)';
+  return L.divIcon({
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;box-shadow:${ring},0 2px 10px rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.6)"><span style="font-size:20px;line-height:1">${member.emoji}</span></div>`,
+    className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+  });
+}
 
 // ─── Phase 11: HeatmapLayer — uses leaflet.heat via useMap() ─────────────────
 function HeatmapLayer({ active }: { active: boolean }) {
@@ -155,6 +167,14 @@ export default function App() {
   const [selectedDistrict, setSelectedDistrict] = useState('beirut');
   // Phase 11: Heatmap toggle
   const [heatmapActive, setHeatmapActive] = useState(false);
+  // Phase 12: Family Safety Circles
+  const [familyCircle, setFamilyCircle] = useState<FamilyMember[]>(() => {
+    try { const raw = localStorage.getItem('guardian-family'); return raw ? JSON.parse(raw) : [...MOCK_FAMILY]; } catch { return [...MOCK_FAMILY]; }
+  });
+  const [showFamily, setShowFamily] = useState(false);
+  const [showFamilyJoin, setShowFamilyJoin] = useState(false);
+  const [circleCode, setCircleCode] = useState('');
+  const [familyVisible, setFamilyVisible] = useState(true);
   const [shelterOverrides, setShelterOverrides] = useState<Record<string, { occupancy: number; lastUpdated: number }>>(() => {
     try { const raw = localStorage.getItem('guardian-shelter-overrides'); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
   });
@@ -294,6 +314,12 @@ export default function App() {
 
   const handleIAmSafe = useCallback(() => {
     addSafeCheckIn(selectedDistrict);
+    // Phase 12: Sync "I AM SAFE" to own family member (fam1 = self)
+    setFamilyCircle(prev => {
+      const updated = prev.map(m => m.id === 'fam1' ? { ...m, status: 'safe' as const, lastSeen: Date.now() } : m);
+      try { localStorage.setItem('guardian-family', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
     setToast(`💚 ${t.markedSafe} — ${DISTRICT_NAMES[selectedDistrict]?.[lang] || selectedDistrict}`);
     setShowIAmSafe(false);
   }, [selectedDistrict, addSafeCheckIn, t, lang]);
@@ -407,6 +433,21 @@ export default function App() {
             </div></Popup></Marker>);
         })}
         {routeCoords && <Polyline positions={routeCoords} pathOptions={{ color: '#3B82F6', weight: 4, dashArray: '10 6', opacity: 0.9 }} />}
+
+        {/* Phase 12: Family Member Markers — private layer */}
+        {familyVisible && familyCircle.map(fm => (
+          <Marker key={fm.id} position={fm.coordinates} icon={buildFamilyIcon(fm)}>
+            <Popup>
+              <div className="text-xs min-w-[160px]">
+                <strong className="block text-sm">{fm.emoji} {fm.name}</strong>
+                <span className={`block mt-1 font-bold text-[11px] ${fm.status === 'safe' ? 'text-green-500' : fm.status === 'danger' ? 'text-red-500' : 'text-purple-400'}`}>
+                  {fm.status === 'safe' ? t.memberSafe : fm.status === 'danger' ? t.memberDanger : t.memberUnknown}
+                </span>
+                <span className="block mt-0.5 text-gray-400 text-[10px]">{t.lastSeen}: {timeAgo(fm.lastSeen)}</span>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
 
       {/* HEADER */}
@@ -462,6 +503,10 @@ export default function App() {
           </button>
           <button onClick={() => setShowEmergency(true)} className={`flex flex-col items-center gap-0.5 text-[10px] font-bold text-red-400 ${isRtl ? 'min-w-[52px]' : ''}`}>
             <span className={`text-lg bg-red-500 text-white ${isRtl ? 'px-3' : 'px-2'} py-0.5 rounded-md font-black`}>SOS</span><span>{t.emergency}</span>
+          </button>
+          {/* Phase 12: Family tab in bottom bar */}
+          <button onClick={() => setShowFamily(true)} className={`flex flex-col items-center gap-0.5 text-[10px] font-bold text-purple-400 ${isRtl ? 'min-w-[52px]' : ''}`}>
+            <span className={`text-lg bg-purple-500 text-white ${isRtl ? 'px-3' : 'px-2'} py-0.5 rounded-md font-black`}>👨‍👩‍👧</span><span>{t.familySafety}</span>
           </button>
         </div>
       </div>
@@ -565,6 +610,70 @@ export default function App() {
           <h3 className="font-bold mb-3">📱 {t.shareQR}</h3>
           <QRCodeSVG value={`https://maps.google.com/?q=${userLocation?.[0] || LEBANON_CENTER[0]},${userLocation?.[1] || LEBANON_CENTER[1]}`} size={180} />
           <p className="text-xs mt-3 opacity-60">{t.shareLocation}</p>
+        </div></div>)}
+
+      {/* Phase 12: Family Safety Circle Modal */}
+      {showFamily && (<div className="absolute inset-0 z-[2000] bg-black/60" onClick={() => setShowFamily(false)}>
+        <div className={`absolute bottom-0 left-0 right-0 max-h-[75vh] ${surface} rounded-t-3xl border-t ${border} overflow-hidden`} onClick={e => e.stopPropagation()}>
+          <div className="p-4 border-b border-white/5">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="font-bold text-sm text-purple-400">👨‍👩‍👧 {t.familyCircle}</h3>
+              <div className="flex gap-2 items-center">
+                <button onClick={() => setFamilyVisible(!familyVisible)}
+                  className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${familyVisible ? 'bg-purple-500/30 text-purple-300' : isDark ? 'bg-white/10 text-white/50' : 'bg-gray-200 text-gray-400'}`}>
+                  {familyVisible ? '👁️' : '👁️‍🗨️'}
+                </button>
+                <button onClick={() => setShowFamily(false)} className="text-xs opacity-60">{t.close} ✕</button>
+              </div>
+            </div>
+            <p className="text-[10px] opacity-50">{t.familyMembers}: {familyCircle.length}</p>
+          </div>
+
+          <div className="overflow-y-auto max-h-[45vh] p-3 space-y-2">
+            {familyCircle.map(fm => {
+              const statusColor = fm.status === 'safe' ? 'text-green-400' : fm.status === 'danger' ? 'text-red-400' : 'text-purple-300';
+              const statusBg = fm.status === 'safe' ? 'bg-green-500/10 border-green-500/20' : fm.status === 'danger' ? 'bg-red-500/10 border-red-500/20' : `${isDark ? 'bg-white/5' : 'bg-gray-50'} ${border}`;
+              return (
+                <div key={fm.id} className={`p-3 rounded-xl border ${statusBg} flex items-center gap-3`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${fm.status === 'safe' ? 'bg-green-500/20' : fm.status === 'danger' ? 'bg-red-500/20' : 'bg-purple-500/20'}`}>{fm.emoji}</div>
+                  <div className="flex-1">
+                    <span className="text-xs font-bold block">{fm.name}</span>
+                    <span className={`text-[10px] font-bold ${statusColor}`}>
+                      {fm.status === 'safe' ? t.memberSafe : fm.status === 'danger' ? t.memberDanger : t.memberUnknown}
+                    </span>
+                    <span className="text-[9px] opacity-50 block">{t.lastSeen}: {timeAgo(fm.lastSeen)}</span>
+                  </div>
+                  <button onClick={() => { setMapCenter(fm.coordinates); setMapZoom(14); setShowFamily(false); }}
+                    className="text-[10px] px-2 py-1 rounded-lg bg-purple-500/20 text-purple-300 font-bold">📍</button>
+                </div>);
+            })}
+          </div>
+
+          <div className="p-3 border-t border-white/5 space-y-2">
+            <div className="flex gap-2">
+              <button onClick={() => setShowFamilyJoin(true)}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold ${isDark ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-100 text-purple-700'}`}>🔗 {t.joinCircle}</button>
+              <button onClick={() => { const code = Math.random().toString().slice(2, 8); setCircleCode(code); setToast(`${t.createSuccess} ${t.circleCode}: ${code}`); }}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold ${isDark ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-100 text-purple-700'}`}>➕ {t.createCircle}</button>
+            </div>
+            {circleCode && <div className={`text-center py-2 rounded-xl ${isDark ? 'bg-purple-500/10' : 'bg-purple-50'} border border-purple-500/20`}>
+              <span className="text-[10px] opacity-60">{t.circleCode}:</span>
+              <span className="text-lg font-black text-purple-400 tracking-[0.3em] block">{circleCode}</span>
+            </div>}
+            <p className="text-[9px] opacity-40 text-center">🔒 {PRIVACY_POLICY[lang]}</p>
+          </div>
+        </div></div>)}
+
+      {/* Phase 12: Join Circle Modal */}
+      {showFamilyJoin && (<div className="absolute inset-0 z-[2001] bg-black/70 flex items-center justify-center" onClick={() => setShowFamilyJoin(false)}>
+        <div className={`${surface} rounded-2xl p-5 border ${border} w-72`} onClick={e => e.stopPropagation()}>
+          <h3 className="font-bold text-sm mb-3 text-purple-400">🔗 {t.joinCircle}</h3>
+          <input value={circleCode} onChange={e => setCircleCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t.enterCode}
+            className={`w-full px-3 py-2.5 rounded-xl text-center text-lg font-black tracking-[0.3em] mb-3 ${isDark ? 'bg-white/5 text-white' : 'bg-gray-100'} border ${border}`} maxLength={6} inputMode="numeric" />
+          <button onClick={() => { if (circleCode.length === 6) { setToast(t.joinSuccess); setShowFamilyJoin(false); } }}
+            disabled={circleCode.length !== 6}
+            className="w-full py-2.5 rounded-xl bg-purple-500 text-white font-bold text-sm disabled:opacity-40">{t.joinCircle}</button>
+          <p className="text-[9px] opacity-40 text-center mt-2">🔒 {t.privacyNote}</p>
         </div></div>)}
     </div>
   );
