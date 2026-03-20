@@ -1,11 +1,12 @@
-// App.tsx — Guardian Lebanon — Unified Data Engine Build
+// App.tsx — Guardian Lebanon — Phase 7: "I AM SAFE" Community Portal
 // Direct GUARDIAN_DATA[activeCategory] rendering — NO intermediary state
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+// lowBandwidthMode: HARD-CODED false — Stability Override
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { QRCodeSVG } from 'qrcode.react';
 import {
-  TRANSLATIONS, DANGER_TYPES, DISTRICT_COORDINATES,
+  TRANSLATIONS, DANGER_TYPES, DISTRICT_COORDINATES, DISTRICT_NAMES,
   LEBANON_CENTER, LEBANON_BOUNDS, DEFAULT_ZOOM,
   SAFETY_BUFFER_METERS, OSRM_BASE_URL,
   MAP_TILE_URL_DARK, MAP_TILE_URL_LIGHT,
@@ -22,6 +23,15 @@ function buildIcon(markerIcon: string, size = 36): L.DivIcon {
   const emoji = MARKER_EMOJI[markerIcon] || '📍';
   return L.divIcon({
     html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.4)"><span style="font-size:${size * 0.5}px;line-height:1">${emoji}</span></div>`,
+    className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+  });
+}
+
+// Build the green pulsing "safe" icon for community check-ins
+function buildSafePulseIcon(count: number): L.DivIcon {
+  const size = Math.min(32 + count * 4, 52);
+  return L.divIcon({
+    html: `<div class="safe-pulse-icon" style="width:${size}px;height:${size}px;border-radius:50%;background:rgba(34,197,94,0.25);display:flex;align-items:center;justify-content:center;border:2px solid #22c55e"><span style="font-size:${size * 0.45}px;line-height:1">💚</span></div>`,
     className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
   });
 }
@@ -89,7 +99,9 @@ export default function App() {
   const [showFeed, setShowFeed] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [showEmergency, setShowEmergency] = useState(false);
-  const [lowBandwidth, setLowBandwidth] = useState(false);
+  const [showIAmSafe, setShowIAmSafe] = useState(false);
+  // ── Stability Override: lowBandwidth HARD-CODED to false ──
+  const lowBandwidth = false;
   const [lowPower, setLowPower] = useState(false);
   const [toast, setToast] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -103,7 +115,8 @@ export default function App() {
   const [isRouting, setIsRouting] = useState(false);
   const [reportType, setReportType] = useState(0);
   const [reportDetails, setReportDetails] = useState('');
-  const [feedFilter, setFeedFilter] = useState<'all' | 'airstrikes' | 'roads'>('all');
+  const [feedFilter, setFeedFilter] = useState<'all' | 'airstrikes' | 'roads' | 'community'>('all');
+  const [selectedDistrict, setSelectedDistrict] = useState('beirut');
 
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
@@ -171,6 +184,24 @@ export default function App() {
     return items.sort((a, b) => b.createdAt - a.createdAt).slice(0, 50);
   })();
 
+  // ── Community Safety Pulse — districts with recent check-ins (<1h) ─────────
+  const ONE_HOUR = 3600000;
+  const activeSafeDistricts = useMemo(() => {
+    const now = Date.now();
+    const districtMap: Record<string, { count: number; latestAt: number }> = {};
+    for (const ci of safeCheckIns) {
+      if (now - ci.createdAt > ONE_HOUR) continue;
+      if (!districtMap[ci.districtId]) {
+        districtMap[ci.districtId] = { count: 0, latestAt: ci.createdAt };
+      }
+      districtMap[ci.districtId].count++;
+      if (ci.createdAt > districtMap[ci.districtId].latestAt) {
+        districtMap[ci.districtId].latestAt = ci.createdAt;
+      }
+    }
+    return districtMap;
+  }, [safeCheckIns]);
+
   // ── Route ──────────────────────────────────────────────────────────────────
   const calculateRoute = useCallback(async () => {
     if (!routeStart || !routeEnd) return;
@@ -208,6 +239,14 @@ export default function App() {
     });
     setShowReport(false); setReportDetails(''); setToast(t.submitted);
   }, [reportType, reportDetails, userLocation, addAlert, t]);
+
+  // ── I AM SAFE — Submit community safety check-in ──────────────────────────
+  const handleIAmSafe = useCallback(() => {
+    addSafeCheckIn(selectedDistrict);
+    const distName = DISTRICT_NAMES[selectedDistrict]?.[lang] || selectedDistrict;
+    setToast(`💚 ${t.markedSafe} — ${distName}`);
+    setShowIAmSafe(false);
+  }, [selectedDistrict, addSafeCheckIn, t, lang]);
 
   // ── Theme classes ──────────────────────────────────────────────────────────
   const bg = isDark ? 'bg-[#121212]' : 'bg-white';
@@ -268,6 +307,24 @@ export default function App() {
           </Marker>
         ))}
 
+        {/* ═══ PHASE 7: GREEN PULSE MARKERS — Community Safety ═══ */}
+        {Object.entries(activeSafeDistricts).map(([districtId, { count }]) => {
+          const coords = DISTRICT_COORDINATES[districtId];
+          if (!coords) return null;
+          const distName = DISTRICT_NAMES[districtId]?.[lang] || districtId;
+          return (
+            <Marker key={`safe-${districtId}`} position={coords} icon={buildSafePulseIcon(count)}>
+              <Popup>
+                <div className="text-xs min-w-[140px] text-center">
+                  <strong className="text-green-600">💚 {t.communityPulse}</strong>
+                  <p className="mt-1 font-bold">{distName}</p>
+                  <p className="text-green-500 font-bold mt-0.5">{count} {t.recentSafe}</p>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+
         {/* ROUTE */}
         {routeCoords && <Polyline positions={routeCoords} pathOptions={{ color: '#3B82F6', weight: 4, dashArray: '10 6', opacity: 0.9 }} />}
       </MapContainer>
@@ -323,6 +380,14 @@ export default function App() {
               <span className="text-xl">{btn.icon}</span><span className={textSub}>{btn.label}</span>
             </button>
           ))}
+
+          {/* ═══ PHASE 7: "I AM SAFE" BUTTON — Pulsing Green ═══ */}
+          <button onClick={() => setShowIAmSafe(true)}
+            className="btn-safe-pulse flex flex-col items-center gap-0.5 text-[10px] font-bold text-green-400">
+            <span className="text-lg bg-green-500 text-white px-2.5 py-0.5 rounded-md font-black">✅ SAFE</span>
+            <span>{t.iAmSafe}</span>
+          </button>
+
           <button onClick={() => setShowEmergency(true)} className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-red-400">
             <span className="text-lg bg-red-500 text-white px-2 py-0.5 rounded-md font-black">SOS</span>
             <span>{t.emergency}</span>
@@ -409,7 +474,6 @@ export default function App() {
               ))}
             </div>
             {[
-              { label: t.lowBandwidth, state: lowBandwidth, setter: setLowBandwidth },
               { label: t.lowPower, state: lowPower, setter: setLowPower },
             ].map((tog, i) => (
               <div key={i} className="flex items-center justify-between mb-3">
@@ -428,6 +492,62 @@ export default function App() {
         </div>
       )}
 
+      {/* ═══ PHASE 7: "I AM SAFE" MODAL — District Selector & Check-in ═══ */}
+      {showIAmSafe && (
+        <div className="absolute inset-0 z-[2000] bg-black/60 flex items-end" onClick={() => setShowIAmSafe(false)}>
+          <div className={`w-full max-w-md mx-auto ${surface} rounded-t-3xl p-5 border-t ${border}`} onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="safe-pulse-icon w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center border-2 border-green-500">
+                <span className="text-2xl">💚</span>
+              </div>
+              <div>
+                <h3 className="text-base font-black text-green-400">{t.iAmSafe}</h3>
+                <p className="text-[11px] opacity-60">{t.iAmSafeDesc}</p>
+              </div>
+            </div>
+
+            {/* District Selector */}
+            <label className="text-xs font-semibold mb-2 block">{t.selectDistrict}</label>
+            <div className="grid grid-cols-2 gap-2 mb-4 max-h-[200px] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+              {Object.entries(DISTRICT_NAMES).map(([id, names]) => (
+                <button key={id} onClick={() => setSelectedDistrict(id)}
+                  className={`p-2.5 rounded-xl text-xs font-bold text-center transition-all ${
+                    selectedDistrict === id
+                      ? 'bg-green-500/20 border-green-500 border-2 text-green-400 ring-1 ring-green-400/30'
+                      : `${isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-gray-50 hover:bg-gray-100'} border ${border}`
+                  }`}>
+                  <span className="block text-sm mb-0.5">{names[lang]}</span>
+                  {activeSafeDistricts[id] && (
+                    <span className="text-[9px] text-green-500">💚 {activeSafeDistricts[id].count} safe</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Community Pulse Summary */}
+            {Object.keys(activeSafeDistricts).length > 0 && (
+              <div className={`mb-4 p-3 rounded-xl ${isDark ? 'bg-green-500/5' : 'bg-green-50'} border border-green-500/20`}>
+                <p className="text-[10px] font-bold text-green-500 mb-1">💚 {t.communityPulse}</p>
+                <div className="flex flex-wrap gap-1">
+                  {Object.entries(activeSafeDistricts).map(([dId, { count }]) => (
+                    <span key={dId} className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400">
+                      {DISTRICT_NAMES[dId]?.[lang] || dId} ({count})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Submit */}
+            <button onClick={handleIAmSafe}
+              className="btn-safe-pulse w-full py-3.5 rounded-xl bg-green-500 text-white font-black text-sm tracking-wide hover:bg-green-600 transition-colors">
+              💚 {t.safeNow} — {DISTRICT_NAMES[selectedDistrict]?.[lang] || selectedDistrict}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ─── FEED ─────────────────────────────────────────────────────── */}
       {showFeed && (
         <div className="absolute inset-0 z-[2000] bg-black/60" onClick={() => setShowFeed(false)}>
@@ -438,34 +558,68 @@ export default function App() {
                 <button onClick={() => setShowFeed(false)} className="text-xs opacity-60">{t.close} ✕</button>
               </div>
               <div className="flex gap-2">
-                {([['all', t.feedAll], ['airstrikes', t.feedAirstrikes], ['roads', t.feedRoads]] as const).map(([key, label]) => (
+                {([
+                  ['all', t.feedAll],
+                  ['airstrikes', t.feedAirstrikes],
+                  ['roads', t.feedRoads],
+                  ['community', t.communityTab],
+                ] as const).map(([key, label]) => (
                   <button key={key} onClick={() => setFeedFilter(key as any)}
-                    className={`px-3 py-1 rounded-full text-[10px] font-bold ${feedFilter === key ? 'bg-red-500 text-white' : isDark ? 'bg-white/10' : 'bg-gray-200'}`}>
-                    {label}
+                    className={`px-3 py-1 rounded-full text-[10px] font-bold ${
+                      feedFilter === key
+                        ? key === 'community' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+                        : isDark ? 'bg-white/10' : 'bg-gray-200'
+                    }`}>
+                    {key === 'community' ? `💚 ${label}` : label}
                   </button>
                 ))}
               </div>
             </div>
             <div className="overflow-y-auto max-h-[55vh] p-3 space-y-2">
-              {feedItems.map(item => (
-                <div key={item.id} className={`p-3 rounded-xl ${isDark ? 'bg-white/5' : 'bg-gray-50'} border ${border}`}>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-bold">{item.type === 'road_closure' ? '🚧' : '💥'} {item.location}</span>
-                      <p className="text-[10px] mt-0.5 opacity-70">{item.message}</p>
+              {/* ═══ PHASE 7: Community Feed Tab ═══ */}
+              {feedFilter === 'community' ? (
+                safeCheckIns.length > 0 ? (
+                  safeCheckIns.slice(0, 30).map(ci => {
+                    const distName = DISTRICT_NAMES[ci.districtId]?.[lang] || ci.districtId;
+                    return (
+                      <div key={ci.id} className={`p-3 rounded-xl ${isDark ? 'bg-green-500/5' : 'bg-green-50'} border border-green-500/20`}>
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">💚</span>
+                            <span className="text-xs font-bold">
+                              {ci.userId} <span className="font-normal opacity-70">{t.communityCheckIn}</span>{' '}
+                              <span className="text-green-400 font-bold">{distName}</span>
+                            </span>
+                          </div>
+                          <span className="text-[10px] opacity-50">{timeAgo(ci.createdAt)}</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-8 opacity-40 text-sm">{t.communityPulse}: No check-ins yet</div>
+                )
+              ) : (
+                feedItems.map(item => (
+                  <div key={item.id} className={`p-3 rounded-xl ${isDark ? 'bg-white/5' : 'bg-gray-50'} border ${border}`}>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-xs font-bold">{item.type === 'road_closure' ? '🚧' : '💥'} {item.location}</span>
+                        <p className="text-[10px] mt-0.5 opacity-70">{item.message}</p>
+                      </div>
+                      <span className="text-[10px] opacity-50">{timeAgo(item.createdAt)}</span>
                     </div>
-                    <span className="text-[10px] opacity-50">{timeAgo(item.createdAt)}</span>
+                    {item.verified && <span className="text-[9px] text-green-400 mt-1 block">{t.verified} • {item.verificationCount} {t.votes}</span>}
+                    {item.type === 'road_closure' && (
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={() => updateAlert(item.id, { verificationCount: (item.verificationCount || 0) + 1 })}
+                          className="text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-400">👍 Confirm</button>
+                        <button className="text-[10px] px-2 py-0.5 rounded bg-red-500/20 text-red-400">👎 Deny</button>
+                      </div>
+                    )}
                   </div>
-                  {item.verified && <span className="text-[9px] text-green-400 mt-1 block">{t.verified} • {item.verificationCount} {t.votes}</span>}
-                  {item.type === 'road_closure' && (
-                    <div className="flex gap-2 mt-2">
-                      <button onClick={() => updateAlert(item.id, { verificationCount: (item.verificationCount || 0) + 1 })}
-                        className="text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-400">👍 Confirm</button>
-                      <button className="text-[10px] px-2 py-0.5 rounded bg-red-500/20 text-red-400">👎 Deny</button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>

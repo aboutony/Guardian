@@ -144,6 +144,7 @@ export const MARKER_COLORS: Record<string, string> = {
   road_block: '#ea580c',
   user: '#3b82f6',
   all: '#6b7280',
+  safe_pulse: '#22c55e',
 };
 
 // ─── Icon emoji mapping per category ─────────────────────────────────────────
@@ -157,6 +158,7 @@ export const MARKER_EMOJI: Record<string, string> = {
   road_block: '🚧',
   user: '📍',
   all: '📍',
+  safe_pulse: '💚',
 };
 
 // ─── District Coords ─────────────────────────────────────────────────────────
@@ -165,6 +167,21 @@ export const DISTRICT_COORDINATES: Record<string, [number, number]> = {
   saida: [33.559, 35.371], tyre: [33.271, 35.196], nabatieh: [33.378, 35.484],
   baalbek: [34.006, 36.202], jounieh: [33.981, 35.617], byblos: [34.123, 35.652],
   zahle: [33.844, 35.907],
+};
+export const DISTRICT_COORDS = DISTRICT_COORDINATES;
+
+// ─── District Display Names (for Community Feed) ─────────────────────────────
+export const DISTRICT_NAMES: Record<string, { en: string; ar: string; fr: string }> = {
+  dahieh: { en: 'Dahieh', ar: 'الضاحية', fr: 'Dahieh' },
+  beirut: { en: 'Beirut', ar: 'بيروت', fr: 'Beyrouth' },
+  tripoli: { en: 'Tripoli', ar: 'طرابلس', fr: 'Tripoli' },
+  saida: { en: 'Saida', ar: 'صيدا', fr: 'Saïda' },
+  tyre: { en: 'Tyre', ar: 'صور', fr: 'Tyr' },
+  nabatieh: { en: 'Nabatieh', ar: 'النبطية', fr: 'Nabatieh' },
+  baalbek: { en: 'Baalbek', ar: 'بعلبك', fr: 'Baalbek' },
+  jounieh: { en: 'Jounieh', ar: 'جونية', fr: 'Jounieh' },
+  byblos: { en: 'Byblos', ar: 'جبيل', fr: 'Byblos' },
+  zahle: { en: 'Zahle', ar: 'زحلة', fr: 'Zahlé' },
 };
 
 // ─── Emergency Contacts — SOS panel ──────────────────────────────────────────
@@ -210,6 +227,10 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     markedSafe: '✅ Marked safe!', feedAll: 'All',
     feedAirstrikes: 'Strikes', feedRoads: 'Roads',
     callNow: 'Call Now', sosTitle: 'Emergency Contacts',
+    communityTab: 'Community', communityCheckIn: 'is SAFE in',
+    iAmSafeDesc: 'Let your community know you are safe',
+    safeIn: 'Safe in', safeNow: 'Mark Safe', selectDistrict: 'Select District',
+    communityPulse: 'Community Pulse', recentSafe: 'recent safety check-ins',
   },
   ar: {
     appName: 'الحارس', searchPlaceholder: 'ابحث عن قرية، مدينة أو عنوان...',
@@ -230,6 +251,10 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     markedSafe: '✅ تم التأشير', feedAll: 'الكل',
     feedAirstrikes: 'غارات', feedRoads: 'طرق',
     callNow: 'اتصل الآن', sosTitle: 'أرقام الطوارئ',
+    communityTab: 'مجتمع', communityCheckIn: 'بأمان في',
+    iAmSafeDesc: 'أخبر مجتمعك أنك بأمان',
+    safeIn: 'بأمان في', safeNow: 'تأشير آمن', selectDistrict: 'اختر المنطقة',
+    communityPulse: 'نبض المجتمع', recentSafe: 'تأشيرات أمان حديثة',
   },
   fr: {
     appName: 'GUARDIAN', searchPlaceholder: 'Chercher village, ville ou adresse...',
@@ -250,5 +275,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     markedSafe: '✅ Marqué!', feedAll: 'Tout',
     feedAirstrikes: 'Frappes', feedRoads: 'Routes',
     callNow: 'Appeler', sosTitle: "Contacts d'urgence",
+    communityTab: 'Communauté', communityCheckIn: 'est EN SÉCURITÉ à',
+    iAmSafeDesc: 'Informez votre communauté que vous êtes en sécurité',
+    safeIn: 'En sécurité à', safeNow: 'Marquer sûr', selectDistrict: 'Choisir district',
+    communityPulse: 'Pouls communautaire', recentSafe: 'check-ins récents',
   },
 };
