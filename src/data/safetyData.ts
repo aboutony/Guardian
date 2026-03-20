@@ -184,6 +184,20 @@ export function useSafetyData() {
     return () => clearInterval(interval);
   }, []);
 
+  // Phase 13: 60-second localStorage hydration — mirror critical data for crash recovery
+  useEffect(() => {
+    const hydrate = () => {
+      try {
+        localStorage.setItem('guardian-hydration-ts', Date.now().toString());
+        persistFeed(alerts);
+        persistCheckIns(safeCheckIns);
+      } catch { /* storage full — silent */ }
+    };
+    hydrate(); // initial hydration
+    const hInterval = setInterval(hydrate, 60000);
+    return () => clearInterval(hInterval);
+  }, [alerts, safeCheckIns]);
+
   const addAlert = useCallback((newAlert: Omit<Alert, 'id' | 'timestamp' | 'verified'>) => {
     const alert: Alert = {
       ...newAlert,

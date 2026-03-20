@@ -1,4 +1,4 @@
-// constants.ts — Guardian Lebanon — Phase 12: Family Safety Circles
+// constants.ts — Guardian Lebanon — Phase 13: Offline Resilience & Mesh-Sync
 // All static data, category arrays, translations, map config
 
 export type Language = 'en' | 'ar' | 'fr';
@@ -365,6 +365,13 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     memberUnknown: '❓ Unknown',
     memberDanger: '🚨 In Danger',
     privacyNote: 'Privacy',
+    // ── Phase 13: Offline & Mesh ───────────────
+    offlineMode: '📴 Offline',
+    onlineMode: '🟢 Online',
+    offlineBanner: 'You are offline — cached data active',
+    meshSync: 'Mesh Sync',
+    outboxPending: 'pending in outbox',
+    outboxSynced: '✅ Outbox synced',
   },
   ar: {
     appName: 'GUARDIAN',
@@ -455,6 +462,12 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     memberUnknown: '❓ غير معروف',
     memberDanger: '🚨 في خطر',
     privacyNote: 'الخصوصية',
+    offlineMode: '📴 غير متصل',
+    onlineMode: '🟢 متصل',
+    offlineBanner: 'أنت غير متصل — البيانات المخزّنة نشطة',
+    meshSync: 'مزامنة شبكية',
+    outboxPending: 'في انتظار الإرسال',
+    outboxSynced: '✅ تمت المزامنة',
   },
   fr: {
     appName: 'GUARDIAN',
@@ -545,5 +558,11 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     memberUnknown: '❓ Inconnu',
     memberDanger: '🚨 En danger',
     privacyNote: 'Confidentialité',
+    offlineMode: '📴 Hors ligne',
+    onlineMode: '🟢 En ligne',
+    offlineBanner: 'Vous êtes hors ligne — données en cache actives',
+    meshSync: 'Sync mesh',
+    outboxPending: 'en attente',
+    outboxSynced: '✅ Boîte synchro',
   },
 };

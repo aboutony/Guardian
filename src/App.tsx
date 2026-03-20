@@ -1,4 +1,4 @@
-// App.tsx — Guardian Lebanon — Phase 12: Family Safety Circles
+// App.tsx — Guardian Lebanon — Phase 13: Offline Resilience & Mesh-Sync
 // GUARDIAN_DATA unified engine — lowBandwidthMode HARD-CODED false
 // Antigravity Editor approved
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -151,6 +151,11 @@ export default function App() {
   const [showIAmSafe, setShowIAmSafe] = useState(false);
   const lowBandwidth = false;
   const [lowPower, setLowPower] = useState(false);
+  // Phase 13: Offline detection & Outbox queue
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [outbox, setOutbox] = useState<Array<{ type: string; payload: any; ts: number }>>(() => {
+    try { const raw = localStorage.getItem('guardian-outbox'); return raw ? JSON.parse(raw) : []; } catch { return []; }
+  });
   const [toast, setToast] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
@@ -195,6 +200,29 @@ export default function App() {
   }, []);
   useEffect(() => { const tm = setTimeout(() => window.dispatchEvent(new Event('resize')), 500); return () => clearTimeout(tm); }, []);
   useEffect(() => { if (!toast) return; const id = setTimeout(() => setToast(''), 3000); return () => clearTimeout(id); }, [toast]);
+
+  // Phase 13: Online/Offline event listeners + outbox flush on reconnect
+  useEffect(() => {
+    const goOnline = () => {
+      setIsOnline(true);
+      // Flush outbox when connection returns
+      setOutbox(prev => {
+        if (prev.length > 0) {
+          prev.forEach(item => {
+            if (item.type === 'safe_checkin') addSafeCheckIn(item.payload.districtId);
+          });
+          localStorage.removeItem('guardian-outbox');
+          setToast(t.outboxSynced);
+          return [];
+        }
+        return prev;
+      });
+    };
+    const goOffline = () => { setIsOnline(false); setToast(t.offlineBanner); };
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+  }, [addSafeCheckIn, t]);
 
   useEffect(() => {
     if (activeCategory === 'all') { setMapCenter(LEBANON_CENTER); setMapZoom(DEFAULT_ZOOM); return; }
@@ -313,16 +341,26 @@ export default function App() {
   }, [reportType, reportDetails, userLocation, addAlert, t, lang]);
 
   const handleIAmSafe = useCallback(() => {
-    addSafeCheckIn(selectedDistrict);
-    // Phase 12: Sync "I AM SAFE" to own family member (fam1 = self)
+    // Phase 13: If offline, queue to outbox instead of dropping
+    if (!isOnline) {
+      const item = { type: 'safe_checkin', payload: { districtId: selectedDistrict }, ts: Date.now() };
+      setOutbox(prev => {
+        const updated = [...prev, item];
+        try { localStorage.setItem('guardian-outbox', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    } else {
+      addSafeCheckIn(selectedDistrict);
+    }
+    // Phase 12: Sync I AM SAFE to own family member (fam1 = self)
     setFamilyCircle(prev => {
       const updated = prev.map(m => m.id === 'fam1' ? { ...m, status: 'safe' as const, lastSeen: Date.now() } : m);
       try { localStorage.setItem('guardian-family', JSON.stringify(updated)); } catch {}
       return updated;
     });
-    setToast(`💚 ${t.markedSafe} — ${DISTRICT_NAMES[selectedDistrict]?.[lang] || selectedDistrict}`);
+    setToast(`💚 ${t.markedSafe} — ${DISTRICT_NAMES[selectedDistrict]?.[lang] || selectedDistrict}${!isOnline ? ` • ${t.outboxPending}` : ''}`);
     setShowIAmSafe(false);
-  }, [selectedDistrict, addSafeCheckIn, t, lang]);
+  }, [selectedDistrict, addSafeCheckIn, t, lang, isOnline]);
 
   const bg = isDark ? 'bg-[#121212]' : 'bg-white';
   const surface = isDark ? 'bg-[#1c1c1e]' : 'bg-gray-100';
@@ -455,6 +493,11 @@ export default function App() {
         <div className="flex items-center justify-between px-3 py-2">
           <h1 className="text-lg font-black tracking-tight text-red-500">🛡️ GUARDIAN</h1>
           <div className="flex items-center gap-2">
+            {/* Phase 13: Offline/Online indicator */}
+            <span className={`text-[9px] ${btnPad} py-0.5 rounded-full font-bold ${isOnline ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400 animate-pulse'}`}>
+              {isOnline ? t.onlineMode : t.offlineMode}
+              {!isOnline && outbox.length > 0 && ` • ${outbox.length}`}
+            </span>
             {/* Phase 11: Heatmap toggle */}
             <button onClick={() => { setHeatmapActive(!heatmapActive); setToast(heatmapActive ? t.heatmapOff : t.heatmapActive); }}
               className={`text-[10px] ${btnPad} py-1 rounded-full font-bold transition-all ${heatmapActive ? 'bg-red-500/30 text-red-400 ring-1 ring-red-500/50' : isDark ? 'bg-white/10 text-white/60' : 'bg-gray-200 text-gray-500'}`}>
