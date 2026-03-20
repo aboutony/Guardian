@@ -1,4 +1,4 @@
-// constants.ts — Guardian Lebanon — Phase 10: Deep Language Synchronization
+// constants.ts — Guardian Lebanon — Phase 11: Predictive Danger Heatmaps
 // All static data, category arrays, translations, map config
 
 export type Language = 'en' | 'ar' | 'fr';
@@ -35,6 +35,8 @@ export interface MarkerPoint {
   // Phase 9: Multi-User Verification
   trustScore?: number;
   disputeCount?: number;
+  // Phase 11: Heatmap weight — influences risk intensity (0.0 - 1.0)
+  weight?: number;
 }
 
 // ─── Verification Thresholds ─────────────────────────────────────────────────
@@ -80,12 +82,13 @@ export const HOSPITALS: MarkerPoint[] = [
   { id: 'h10', name: 'Mount Lebanon Hospital', coordinates: [33.890, 35.545], phone: '140', status: 'open' },
 ];
 
+// Phase 11: AIRSTRIKES now include `weight` for heatmap intensity
 export const AIRSTRIKES: MarkerPoint[] = [
-  { id: 'a1', name: 'Haret Hreik Strike', coordinates: [33.848, 35.505], message: 'Confirmed Air Strike - Avoid Area', verified: true, verificationCount: 12, trustScore: 92, disputeCount: 1 },
-  { id: 'a2', name: 'Tyre Coast Shelling', coordinates: [33.271, 35.196], message: 'Heavy Shelling Reported', verified: true, verificationCount: 8, trustScore: 78, disputeCount: 2 },
-  { id: 'a3', name: 'Baalbek Center Evacuation', coordinates: [34.006, 36.202], message: 'Immediate Evacuation Order', verified: true, verificationCount: 15, trustScore: 95, disputeCount: 0 },
-  { id: 'a4', name: 'Dahieh Southern Suburb', coordinates: [33.838, 35.502], message: 'Multiple strikes confirmed', verified: true, verificationCount: 20, trustScore: 98, disputeCount: 0 },
-  { id: 'a5', name: 'Nabatieh Market Shelling', coordinates: [33.376, 35.480], message: 'Market area shelled', verified: false, verificationCount: 3, trustScore: 35, disputeCount: 4 },
+  { id: 'a1', name: 'Haret Hreik Strike', coordinates: [33.848, 35.505], message: 'Confirmed Air Strike - Avoid Area', verified: true, verificationCount: 12, trustScore: 92, disputeCount: 1, weight: 0.95 },
+  { id: 'a2', name: 'Tyre Coast Shelling', coordinates: [33.271, 35.196], message: 'Heavy Shelling Reported', verified: true, verificationCount: 8, trustScore: 78, disputeCount: 2, weight: 0.80 },
+  { id: 'a3', name: 'Baalbek Center Evacuation', coordinates: [34.006, 36.202], message: 'Immediate Evacuation Order', verified: true, verificationCount: 15, trustScore: 95, disputeCount: 0, weight: 1.0 },
+  { id: 'a4', name: 'Dahieh Southern Suburb', coordinates: [33.838, 35.502], message: 'Multiple strikes confirmed', verified: true, verificationCount: 20, trustScore: 98, disputeCount: 0, weight: 1.0 },
+  { id: 'a5', name: 'Nabatieh Market Shelling', coordinates: [33.376, 35.480], message: 'Market area shelled', verified: false, verificationCount: 3, trustScore: 35, disputeCount: 4, weight: 0.40 },
 ];
 
 export const BAKERIES: MarkerPoint[] = [
@@ -128,11 +131,32 @@ export const NGOS: MarkerPoint[] = [
 ];
 
 export const ROAD_BLOCKS: MarkerPoint[] = [
-  { id: 'rc1', name: 'Qasmiyeh Bridge', coordinates: [33.318, 35.265], message: 'Bridge closed - structural damage', verified: true, verificationCount: 9, roadOpen: false, trustScore: 88, disputeCount: 1 },
-  { id: 'rc2', name: 'Jiyyeh Highway', coordinates: [33.669, 35.408], message: 'Highway blocked - shelling debris', verified: true, verificationCount: 6, roadOpen: false, trustScore: 72, disputeCount: 3 },
-  { id: 'rc3', name: 'Damour Tunnel', coordinates: [33.733, 35.450], message: 'Tunnel partially collapsed', verified: false, verificationCount: 2, roadOpen: false, trustScore: 28, disputeCount: 7 },
-  { id: 'rc4', name: 'Litani Bridge', coordinates: [33.352, 35.485], message: 'Bridge closed by ISF', verified: true, verificationCount: 11, roadOpen: false, trustScore: 91, disputeCount: 0 },
-  { id: 'rc5', name: 'Saida North Road', coordinates: [33.572, 35.381], message: 'Road blocked - use alternate', verified: false, verificationCount: 1, roadOpen: false, trustScore: 15, disputeCount: 6 },
+  { id: 'rc1', name: 'Qasmiyeh Bridge', coordinates: [33.318, 35.265], message: 'Bridge closed - structural damage', verified: true, verificationCount: 9, roadOpen: false, trustScore: 88, disputeCount: 1, weight: 0.70 },
+  { id: 'rc2', name: 'Jiyyeh Highway', coordinates: [33.669, 35.408], message: 'Highway blocked - shelling debris', verified: true, verificationCount: 6, roadOpen: false, trustScore: 72, disputeCount: 3, weight: 0.60 },
+  { id: 'rc3', name: 'Damour Tunnel', coordinates: [33.733, 35.450], message: 'Tunnel partially collapsed', verified: false, verificationCount: 2, roadOpen: false, trustScore: 28, disputeCount: 7, weight: 0.30 },
+  { id: 'rc4', name: 'Litani Bridge', coordinates: [33.352, 35.485], message: 'Bridge closed by ISF', verified: true, verificationCount: 11, roadOpen: false, trustScore: 91, disputeCount: 0, weight: 0.75 },
+  { id: 'rc5', name: 'Saida North Road', coordinates: [33.572, 35.381], message: 'Road blocked - use alternate', verified: false, verificationCount: 1, roadOpen: false, trustScore: 15, disputeCount: 6, weight: 0.20 },
+];
+
+// ─── Phase 11: Seismic / Historical Risk Data ────────────────────────────────
+// Supplementary heatmap points covering known risk corridors not covered by active strikes
+export interface SeismicPoint {
+  coordinates: [number, number];
+  weight: number; // 0.0 - 1.0 intensity
+  label: string;
+}
+
+export const SEISMIC_DATA: SeismicPoint[] = [
+  { coordinates: [33.860, 35.510], weight: 0.85, label: 'Dahieh Corridor' },
+  { coordinates: [33.845, 35.498], weight: 0.75, label: 'Southern Suburb Buffer' },
+  { coordinates: [33.280, 35.210], weight: 0.65, label: 'Tyre Coast Risk Zone' },
+  { coordinates: [33.370, 35.475], weight: 0.55, label: 'Nabatieh Perimeter' },
+  { coordinates: [34.010, 36.210], weight: 0.70, label: 'Baalbek Eastern Corridor' },
+  { coordinates: [33.680, 35.420], weight: 0.50, label: 'Jiyyeh–Damour Strip' },
+  { coordinates: [33.340, 35.280], weight: 0.45, label: 'Qasmiyeh Approach' },
+  { coordinates: [33.830, 35.510], weight: 0.90, label: 'Haret Hreik Epicenter' },
+  { coordinates: [33.565, 35.385], weight: 0.40, label: 'Saida Buffer' },
+  { coordinates: [33.850, 35.495], weight: 0.80, label: 'Dahieh West' },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -216,8 +240,7 @@ export const DANGER_TYPES = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  TRANSLATIONS — Phase 10: Deep Language Synchronization
-//  Categories, Social, Status, Navigation, Shelter, Verification — FULL COVER
+//  TRANSLATIONS — Phase 11: Predictive Danger Heatmaps
 // ═══════════════════════════════════════════════════════════════════════════════
 export const TRANSLATIONS: Record<Language, Record<string, string>> = {
   en: {
@@ -299,11 +322,14 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     disputeRecorded: '❌ Dispute recorded',
     confirmations: 'confirmations',
     disputes: 'disputes',
-    // ── Phase 10: extras ───────────────────────
+    // ── Phase 10 ──────────────────────────────
     autoDetected: 'Language auto-detected',
+    // ── Phase 11: Heatmap ─────────────────────
+    riskHeatmap: 'Risk Heatmap',
+    heatmapActive: '🔥 Heatmap active',
+    heatmapOff: 'Heatmap off',
   },
   ar: {
-    // ── Navigation ─────────────────────────────
     appName: 'GUARDIAN',
     searchPlaceholder: 'ابحث عن قرية، مدينة أو عنوان...',
     safestPath: 'أسلم طريق',
@@ -316,14 +342,12 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     dark: 'داكن',
     light: 'فاتح',
     close: 'إغلاق',
-    // ── Status ─────────────────────────────────
     open: '🟢 مفتوح',
     closed: '🔴 مغلق',
     blocked: '🔴 مسدود',
     lowBandwidth: 'نطاق ترددي منخفض',
     lowBandwidthActive: '📡 نطاق منخفض',
     lowPower: 'طاقة منخفضة',
-    // ── Route ──────────────────────────────────
     from: 'من',
     to: 'إلى',
     calculate: 'احسب المسار',
@@ -332,13 +356,11 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     routeError: '⚠️ خطأ في حساب المسار',
     dangerAvoided: 'مناطق خطر تم تجنبها',
     minutes: 'دق',
-    // ── Report ─────────────────────────────────
     reportType: 'نوع البلاغ',
     details: 'تفاصيل',
     submit: 'إرسال البلاغ',
     submitted: '✅ تم الإرسال',
     userReport: 'بلاغ مستخدم',
-    // ── Social ─────────────────────────────────
     verified: '✅ موثّق',
     community: 'مجتمع',
     votes: 'أصوات',
@@ -358,11 +380,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     safeLabel: 'آمن',
     callNow: 'اتصل الآن',
     sosTitle: 'أرقام الطوارئ',
-    // ── Feed ───────────────────────────────────
     feedAll: 'الكل',
     feedAirstrikes: 'غارات',
     feedRoads: 'طرق',
-    // ── Shelter (Phase 8) ──────────────────────
     shelterCapacity: 'السعة الحالية',
     shelterFull: 'ممتلئ',
     shelterLimited: 'محدود',
@@ -372,7 +392,6 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     lastUpdate: 'آخر تحديث',
     stillSpace: 'لا يزال متاحاً',
     almostFull: 'شبه ممتلئ',
-    // ── Verification (Phase 9) ─────────────────
     confirmReport: 'تأكيد',
     disputeReport: 'اعتراض',
     unverified: '⚠️ غير موثّق',
@@ -381,11 +400,12 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     disputeRecorded: '❌ تم تسجيل الاعتراض',
     confirmations: 'تأكيدات',
     disputes: 'اعتراضات',
-    // ── Phase 10: extras ───────────────────────
     autoDetected: 'تم كشف اللغة تلقائياً',
+    riskHeatmap: 'خريطة المخاطر',
+    heatmapActive: '🔥 خريطة الحرارة نشطة',
+    heatmapOff: 'إيقاف خريطة الحرارة',
   },
   fr: {
-    // ── Navigation ─────────────────────────────
     appName: 'GUARDIAN',
     searchPlaceholder: 'Chercher village, ville ou adresse...',
     safestPath: 'Chemin sûr',
@@ -398,14 +418,12 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     dark: 'Sombre',
     light: 'Clair',
     close: 'Fermer',
-    // ── Status ─────────────────────────────────
     open: '🟢 Ouvert',
     closed: '🔴 Fermé',
     blocked: '🔴 Bloqué',
     lowBandwidth: 'Faible débit',
     lowBandwidthActive: '📡 Bas débit',
     lowPower: 'Faible conso',
-    // ── Route ──────────────────────────────────
     from: 'De',
     to: 'À',
     calculate: 'Calculer',
@@ -414,13 +432,11 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     routeError: '⚠️ Erreur de calcul',
     dangerAvoided: 'zones de danger évitées',
     minutes: 'min',
-    // ── Report ─────────────────────────────────
     reportType: 'Type de rapport',
     details: 'Détails',
     submit: 'Envoyer',
     submitted: '✅ Envoyé',
     userReport: 'Rapport utilisateur',
-    // ── Social ─────────────────────────────────
     verified: '✅ Vérifié',
     community: 'Communauté',
     votes: 'votes',
@@ -440,11 +456,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     safeLabel: 'sûr',
     callNow: 'Appeler',
     sosTitle: "Contacts d'urgence",
-    // ── Feed ───────────────────────────────────
     feedAll: 'Tout',
     feedAirstrikes: 'Frappes',
     feedRoads: 'Routes',
-    // ── Shelter (Phase 8) ──────────────────────
     shelterCapacity: 'Capacité actuelle',
     shelterFull: 'COMPLET',
     shelterLimited: 'Limité',
@@ -454,7 +468,6 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     lastUpdate: 'Dernière MAJ',
     stillSpace: 'Encore de la place',
     almostFull: 'Presque plein',
-    // ── Verification (Phase 9) ─────────────────
     confirmReport: 'Confirmer',
     disputeReport: 'Contester',
     unverified: '⚠️ NON VÉRIFIÉ',
@@ -463,7 +476,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     disputeRecorded: '❌ Contestation enregistrée',
     confirmations: 'confirmations',
     disputes: 'contestations',
-    // ── Phase 10: extras ───────────────────────
     autoDetected: 'Langue auto-détectée',
+    riskHeatmap: 'Carte de risque',
+    heatmapActive: '🔥 Carte thermique active',
+    heatmapOff: 'Carte thermique désactivée',
   },
 };
