@@ -1,6 +1,7 @@
-// App.tsx — Guardian Lebanon — Phase 9: Multi-User Verification System
+// App.tsx — Guardian Lebanon — Phase 10: Deep Language Synchronization
 // Direct GUARDIAN_DATA[activeCategory] rendering — NO intermediary state
 // lowBandwidthMode: HARD-CODED false — Stability Override
+// "Guardian" name always English — Antigravity Editor approved
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -13,11 +14,12 @@ import {
   EMERGENCY_CONTACTS, FILTER_CATEGORIES,
   GUARDIAN_DATA, ALL_MARKERS, MARKER_COLORS, MARKER_EMOJI,
   AIRSTRIKES, NGOS, ROAD_BLOCKS, getShelterStatus, DISPUTE_THRESHOLD,
+  detectBrowserLanguage,
   type Language, type Theme, type MarkerPoint,
 } from './constants';
 import { useSafetyData, type Alert } from './data/safetyData';
 
-// ─── Build Leaflet DivIcon on the fly ────────────────────────────────────────
+// ─── Build Leaflet DivIcon ───────────────────────────────────────────────────
 function buildIcon(markerIcon: string, size = 36, opacity = 1): L.DivIcon {
   const bg = MARKER_COLORS[markerIcon] || '#6b7280';
   const emoji = MARKER_EMOJI[markerIcon] || '📍';
@@ -27,7 +29,6 @@ function buildIcon(markerIcon: string, size = 36, opacity = 1): L.DivIcon {
   });
 }
 
-// Build the green pulsing "safe" icon for community check-ins
 function buildSafePulseIcon(count: number): L.DivIcon {
   const size = Math.min(32 + count * 4, 52);
   return L.divIcon({
@@ -36,7 +37,6 @@ function buildSafePulseIcon(count: number): L.DivIcon {
   });
 }
 
-// Phase 8: Build shelter icon WITH occupancy status ring
 function buildShelterIcon(marker: MarkerPoint, size = 38): L.DivIcon {
   const bg = MARKER_COLORS['ngo'] || '#0891b2';
   const emoji = MARKER_EMOJI['ngo'] || '🤝';
@@ -50,20 +50,11 @@ function buildShelterIcon(marker: MarkerPoint, size = 38): L.DivIcon {
   });
 }
 
-// Pre-build icons for each category
 const CATEGORY_ICONS: Record<string, L.DivIcon> = {};
-FILTER_CATEGORIES.forEach(f => {
-  if (f.id !== 'all') CATEGORY_ICONS[f.id] = buildIcon(f.markerIcon);
-});
+FILTER_CATEGORIES.forEach(f => { if (f.id !== 'all') CATEGORY_ICONS[f.id] = buildIcon(f.markerIcon); });
 const USER_ICON = buildIcon('user', 40);
-
-// Pre-build shelter icons with status rings
 const SHELTER_ICONS: Record<string, L.DivIcon> = {};
-NGOS.forEach(ngo => {
-  SHELTER_ICONS[ngo.id] = buildShelterIcon(ngo);
-});
-
-// Phase 9: Sets to identify verifiable markers
+NGOS.forEach(ngo => { SHELTER_ICONS[ngo.id] = buildShelterIcon(ngo); });
 const AIRSTRIKE_IDS = new Set(AIRSTRIKES.map(a => a.id));
 const ROADBLOCK_IDS = new Set(ROAD_BLOCKS.map(r => r.id));
 
@@ -77,10 +68,7 @@ function MapController({ center, zoom }: { center: [number, number]; zoom: numbe
   }, [center, zoom, map]);
   useEffect(() => {
     const t1 = setTimeout(() => map.invalidateSize(), 100);
-    const t2 = setTimeout(() => {
-      map.invalidateSize();
-      window.dispatchEvent(new Event('resize'));
-    }, 500);
+    const t2 = setTimeout(() => { map.invalidateSize(); window.dispatchEvent(new Event('resize')); }, 500);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [map]);
   return null;
@@ -99,18 +87,15 @@ function timeAgo(ts: number): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h`; return `${Math.floor(s / 86400)}d`;
 }
 
-// Resolve which icon to use for a marker in "all" mode
-function resolveAllIcon(marker: MarkerPoint, disputeOverrides: Record<string, number>): L.DivIcon {
+function resolveAllIcon(marker: MarkerPoint, disputeOv: Record<string, number>): L.DivIcon {
   if (SHELTER_ICONS[marker.id]) return SHELTER_ICONS[marker.id];
-  // Phase 9: dim markers with > DISPUTE_THRESHOLD disputes
-  const disputes = disputeOverrides[marker.id] ?? marker.disputeCount ?? 0;
+  const disputes = disputeOv[marker.id] ?? marker.disputeCount ?? 0;
   const isUnverified = disputes > DISPUTE_THRESHOLD;
   for (const cat of FILTER_CATEGORIES) {
     if (cat.id === 'all') continue;
     const arr = GUARDIAN_DATA[cat.id];
-    if (arr && arr.some(m => m.id === marker.id)) {
+    if (arr && arr.some(m => m.id === marker.id))
       return isUnverified ? buildIcon(cat.markerIcon, 36, 0.4) : CATEGORY_ICONS[cat.id];
-    }
   }
   return buildIcon('all');
 }
@@ -119,8 +104,12 @@ function resolveAllIcon(marker: MarkerPoint, disputeOverrides: Record<string, nu
 export default function App() {
   const { alerts, addAlert, updateAlert, safeCheckIns, addSafeCheckIn, locations } = useSafetyData();
 
-  // ── State ──────────────────────────────────────────────────────────────────
-  const [lang, setLang] = useState<Language>(() => (localStorage.getItem('guardian-lang') as Language) || 'en');
+  // ── Phase 10: Auto-detect browser language on first load ───────────────────
+  const [lang, setLang] = useState<Language>(() => {
+    const stored = localStorage.getItem('guardian-lang') as Language;
+    if (stored && ['en', 'ar', 'fr'].includes(stored)) return stored;
+    return detectBrowserLanguage();
+  });
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('guardian-theme') as Theme) || 'dark');
   const [activeCategory, setActiveCategory] = useState('all');
   const [showReport, setShowReport] = useState(false);
@@ -146,11 +135,9 @@ export default function App() {
   const [reportDetails, setReportDetails] = useState('');
   const [feedFilter, setFeedFilter] = useState<'all' | 'airstrikes' | 'roads' | 'community'>('all');
   const [selectedDistrict, setSelectedDistrict] = useState('beirut');
-  // Phase 8: Shelter overrides
   const [shelterOverrides, setShelterOverrides] = useState<Record<string, { occupancy: number; lastUpdated: number }>>(() => {
     try { const raw = localStorage.getItem('guardian-shelter-overrides'); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
   });
-  // Phase 9: Verification overrides — track user confirms/disputes per marker ID
   const [verificationOverrides, setVerificationOverrides] = useState<Record<string, { confirms: number; disputes: number }>>(() => {
     try { const raw = localStorage.getItem('guardian-verification'); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
   });
@@ -158,52 +145,35 @@ export default function App() {
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
   const isDark = theme === 'dark';
+  // Phase 10: RTL width buffer — Arabic text needs ~20% more space
+  const btnPad = isRtl ? 'px-4' : 'px-3';
 
   // ── Effects ────────────────────────────────────────────────────────────────
   useEffect(() => { localStorage.setItem('guardian-lang', lang); }, [lang]);
   useEffect(() => { localStorage.setItem('guardian-theme', theme); }, [theme]);
   useEffect(() => {
     if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      pos => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
-      () => {}
-    );
+    navigator.geolocation.getCurrentPosition(pos => setUserLocation([pos.coords.latitude, pos.coords.longitude]), () => {});
   }, []);
-  useEffect(() => {
-    const t = setTimeout(() => window.dispatchEvent(new Event('resize')), 500);
-    return () => clearTimeout(t);
-  }, []);
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(''), 3000);
-    return () => clearTimeout(id);
-  }, [toast]);
+  useEffect(() => { const tm = setTimeout(() => window.dispatchEvent(new Event('resize')), 500); return () => clearTimeout(tm); }, []);
+  useEffect(() => { if (!toast) return; const id = setTimeout(() => setToast(''), 3000); return () => clearTimeout(id); }, [toast]);
 
-  // ── Category change → auto-zoom ───────────────────────────────────────────
   useEffect(() => {
     if (activeCategory === 'all') { setMapCenter(LEBANON_CENTER); setMapZoom(DEFAULT_ZOOM); return; }
     const points = GUARDIAN_DATA[activeCategory];
     if (points && points.length > 0) {
       const avgLat = points.reduce((s, p) => s + p.coordinates[0], 0) / points.length;
       const avgLng = points.reduce((s, p) => s + p.coordinates[1], 0) / points.length;
-      setMapCenter([avgLat, avgLng]);
-      setMapZoom(points.length === 1 ? 13 : 10);
+      setMapCenter([avgLat, avgLng]); setMapZoom(points.length === 1 ? 13 : 10);
     }
   }, [activeCategory]);
 
-  const markersToRender: MarkerPoint[] = activeCategory === 'all'
-    ? ALL_MARKERS : (GUARDIAN_DATA[activeCategory] || []);
+  const markersToRender = activeCategory === 'all' ? ALL_MARKERS : (GUARDIAN_DATA[activeCategory] || []);
+  const currentIcon = activeCategory !== 'all' ? (CATEGORY_ICONS[activeCategory] || buildIcon('all')) : buildIcon('all');
 
-  const currentIcon: L.DivIcon = activeCategory !== 'all'
-    ? (CATEGORY_ICONS[activeCategory] || buildIcon('all')) : buildIcon('all');
-
-  // Phase 8: effective occupancy
   const getEffectiveOccupancy = useCallback((marker: MarkerPoint) => {
-    const override = shelterOverrides[marker.id];
-    return {
-      occupancy: override ? override.occupancy : (marker.occupancy ?? 0),
-      lastUpdated: override ? override.lastUpdated : (marker.lastUpdated ?? 0),
-    };
+    const ov = shelterOverrides[marker.id];
+    return { occupancy: ov ? ov.occupancy : (marker.occupancy ?? 0), lastUpdated: ov ? ov.lastUpdated : (marker.lastUpdated ?? 0) };
   }, [shelterOverrides]);
 
   const handleShelterReport = useCallback((markerId: string, capacity: number, rt: 'space' | 'full') => {
@@ -214,7 +184,6 @@ export default function App() {
     setToast(rt === 'space' ? `✅ ${t.stillSpace}` : `⚠️ ${t.almostFull}`);
   }, [shelterOverrides, t]);
 
-  // Phase 9: Compute effective dispute counts (static data + user overrides)
   const disputeOverrides = useMemo(() => {
     const map: Record<string, number> = {};
     [...AIRSTRIKES, ...ROAD_BLOCKS].forEach(m => {
@@ -225,7 +194,6 @@ export default function App() {
     return map;
   }, [verificationOverrides]);
 
-  // Phase 9: Confirm handler — adds verification + contribution toast
   const handleConfirmReport = useCallback((markerId: string) => {
     const prev = verificationOverrides[markerId] || { confirms: 0, disputes: 0 };
     const updated = { ...verificationOverrides, [markerId]: { ...prev, confirms: prev.confirms + 1 } };
@@ -234,7 +202,6 @@ export default function App() {
     setToast(t.contributionPoint);
   }, [verificationOverrides, t]);
 
-  // Phase 9: Dispute handler
   const handleDisputeReport = useCallback((markerId: string) => {
     const prev = verificationOverrides[markerId] || { confirms: 0, disputes: 0 };
     const updated = { ...verificationOverrides, [markerId]: { ...prev, disputes: prev.disputes + 1 } };
@@ -243,7 +210,6 @@ export default function App() {
     setToast(t.disputeRecorded);
   }, [verificationOverrides, t]);
 
-  // Phase 9: Get effective verification data for a marker
   const getVerificationData = useCallback((marker: MarkerPoint) => {
     const ov = verificationOverrides[marker.id] || { confirms: 0, disputes: 0 };
     const totalConfirms = (marker.verificationCount ?? 0) + ov.confirms;
@@ -253,14 +219,12 @@ export default function App() {
     return { totalConfirms, totalDisputes, isUnverified, trust };
   }, [verificationOverrides]);
 
-  // ── Search ─────────────────────────────────────────────────────────────────
   const searchResults = searchQuery.trim()
     ? locations.filter((l: any) => {
         const q = searchQuery.toLowerCase();
         return l.name.toLowerCase().includes(q) || l.ar.includes(q) || (l.fr && l.fr.toLowerCase().includes(q));
       }).slice(0, 5) : [];
 
-  // ── Feed ───────────────────────────────────────────────────────────────────
   const feedItems = (() => {
     let items = [...alerts];
     if (feedFilter === 'airstrikes') items = items.filter(a => a.type === 'danger' || a.type === 'airstrike');
@@ -268,7 +232,6 @@ export default function App() {
     return items.sort((a, b) => b.createdAt - a.createdAt).slice(0, 50);
   })();
 
-  // ── Community Safety Pulse ─────────────────────────────────────────────────
   const ONE_HOUR = 3600000;
   const activeSafeDistricts = useMemo(() => {
     const now = Date.now();
@@ -282,7 +245,6 @@ export default function App() {
     return dMap;
   }, [safeCheckIns]);
 
-  // ── Route ──────────────────────────────────────────────────────────────────
   const calculateRoute = useCallback(async () => {
     if (!routeStart || !routeEnd) return;
     setIsRouting(true);
@@ -304,7 +266,7 @@ export default function App() {
         setRouteInfo({ duration: Math.round(data.routes[0].duration / 60), dangerAvoided: avoided });
         setToast(`✅ ${t.routeFound} — ${avoided} ${t.dangerAvoided}`);
       }
-    } catch { setToast('⚠️ Route error'); }
+    } catch { setToast(t.routeError); }
     setIsRouting(false);
   }, [routeStart, routeEnd, t]);
 
@@ -312,12 +274,12 @@ export default function App() {
     const dt = DANGER_TYPES[reportType];
     addAlert({
       type: dt.type === 'road_closure' ? 'road_closure' : 'danger',
-      location: `User Report — ${dt.en}`, districtId: 'beirut',
-      message: reportDetails || dt.en, createdAt: Date.now(),
+      location: `${t.userReport} — ${dt[lang as 'en' | 'ar' | 'fr']}`, districtId: 'beirut',
+      message: reportDetails || dt[lang as 'en' | 'ar' | 'fr'], createdAt: Date.now(),
       coordinates: userLocation || LEBANON_CENTER, isUserReported: true,
     });
     setShowReport(false); setReportDetails(''); setToast(t.submitted);
-  }, [reportType, reportDetails, userLocation, addAlert, t]);
+  }, [reportType, reportDetails, userLocation, addAlert, t, lang]);
 
   const handleIAmSafe = useCallback(() => {
     addSafeCheckIn(selectedDistrict);
@@ -326,14 +288,13 @@ export default function App() {
     setShowIAmSafe(false);
   }, [selectedDistrict, addSafeCheckIn, t, lang]);
 
-  // ── Theme classes ──────────────────────────────────────────────────────────
   const bg = isDark ? 'bg-[#121212]' : 'bg-white';
   const surface = isDark ? 'bg-[#1c1c1e]' : 'bg-gray-100';
   const textMain = isDark ? 'text-white' : 'text-gray-900';
   const textSub = isDark ? 'text-gray-400' : 'text-gray-500';
   const border = isDark ? 'border-white/10' : 'border-gray-200';
 
-  // ── Phase 8: Shelter Popup Builder ─────────────────────────────────────────
+  // ── Shelter Popup ──────────────────────────────────────────────────────────
   const renderShelterPopup = (marker: MarkerPoint) => {
     const { occupancy: occ, lastUpdated: lu } = getEffectiveOccupancy(marker);
     const cap = marker.capacity ?? 0;
@@ -372,7 +333,7 @@ export default function App() {
     );
   };
 
-  // ── Phase 9: Verifiable Popup Builder (Airstrikes + Road Blocks) ───────────
+  // ── Verifiable Popup ───────────────────────────────────────────────────────
   const renderVerifiablePopup = (marker: MarkerPoint) => {
     const vd = getVerificationData(marker);
     const trustColor = vd.trust >= 70 ? '#22c55e' : vd.trust >= 40 ? '#f97316' : '#ef4444';
@@ -380,15 +341,9 @@ export default function App() {
       <div className="text-xs min-w-[200px]">
         <strong className="block text-sm">{marker.name}</strong>
         {marker.message && <p className="mt-1 text-gray-600">{marker.message}</p>}
-
-        {/* Phase 9: Unverified warning */}
         {vd.isUnverified && (
-          <div className="mt-1.5 px-2 py-1 rounded-lg bg-yellow-100 border border-yellow-400 text-yellow-800 text-[10px] font-black">
-            {t.unverified}
-          </div>
+          <div className="mt-1.5 px-2 py-1 rounded-lg bg-yellow-100 border border-yellow-400 text-yellow-800 text-[10px] font-black">{t.unverified}</div>
         )}
-
-        {/* Trust Score bar */}
         <div className="mt-2">
           <div className="flex justify-between items-center mb-1">
             <span className="font-bold text-[10px]">{t.trustScore}</span>
@@ -402,37 +357,25 @@ export default function App() {
             <span>❌ {vd.totalDisputes} {t.disputes}</span>
           </div>
         </div>
-
         {marker.verified && <span className="block mt-1 text-green-500 text-[10px]">{t.verified}</span>}
-
-        {/* Phase 9: Confirm / Dispute buttons */}
         <div className="flex gap-1.5 mt-2 pt-2 border-t border-gray-200">
           <button onClick={() => handleConfirmReport(marker.id)}
-            className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 transition-colors">
-            ✅ {t.confirmReport}
-          </button>
+            className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 transition-colors">✅ {t.confirmReport}</button>
           <button onClick={() => handleDisputeReport(marker.id)}
-            className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition-colors">
-            ❌ {t.disputeReport}
-          </button>
+            className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition-colors">❌ {t.disputeReport}</button>
         </div>
       </div>
     );
   };
 
   // ═════════════════════════════════════════════════════════════════════════════
-  //  RENDER
-  // ═════════════════════════════════════════════════════════════════════════════
   return (
     <div className={`relative w-screen h-[100dvh] overflow-hidden ${bg} ${textMain}`} dir={isRtl ? 'rtl' : 'ltr'}>
 
       {/* ─── MAP ──────────────────────────────────────────────────────── */}
-      <MapContainer
-        center={LEBANON_CENTER} zoom={DEFAULT_ZOOM}
+      <MapContainer center={LEBANON_CENTER} zoom={DEFAULT_ZOOM}
         style={{ height: '100dvh', width: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}
-        maxBounds={LEBANON_BOUNDS} maxBoundsViscosity={0.8}
-        zoomControl={false} attributionControl={false}
-      >
+        maxBounds={LEBANON_BOUNDS} maxBoundsViscosity={0.8} zoomControl={false} attributionControl={false}>
         <MapController center={mapCenter} zoom={mapZoom} />
         <TileLayer url={isDark ? MAP_TILE_URL_DARK : MAP_TILE_URL_LIGHT} />
 
@@ -442,20 +385,16 @@ export default function App() {
           </Marker>
         )}
 
-        {/* ═══ CATEGORY MARKERS — DIRECT FROM GUARDIAN_DATA ═══ */}
         {markersToRender.map(marker => {
           const isNgo = SHELTER_ICONS[marker.id] != null;
           const isVerifiable = AIRSTRIKE_IDS.has(marker.id) || ROADBLOCK_IDS.has(marker.id);
-          // Phase 9: dim markers with too many disputes
           const disputes = disputeOverrides[marker.id] ?? 0;
           const isDimmed = isVerifiable && disputes > DISPUTE_THRESHOLD;
-
           const icon = (() => {
             if (isNgo) return SHELTER_ICONS[marker.id] || currentIcon;
             if (activeCategory === 'all') return resolveAllIcon(marker, disputeOverrides);
             return isDimmed ? buildIcon(FILTER_CATEGORIES.find(f => f.id === activeCategory)?.markerIcon || 'all', 36, 0.4) : currentIcon;
           })();
-
           return (
             <Marker key={marker.id} position={marker.coordinates} icon={icon}>
               <Popup>
@@ -480,7 +419,6 @@ export default function App() {
           );
         })}
 
-        {/* Green Pulse Community Markers */}
         {Object.entries(activeSafeDistricts).map(([districtId, { count }]) => {
           const coords = DISTRICT_COORDINATES[districtId];
           if (!coords) return null;
@@ -503,16 +441,18 @@ export default function App() {
       {/* ─── HEADER ───────────────────────────────────────────────────── */}
       <div className={`absolute top-0 left-0 right-0 z-[1000] ${surface}/90 backdrop-blur-xl border-b ${border}`}>
         <div className="flex items-center justify-between px-3 py-2">
+          {/* Phase 10: "GUARDIAN" stays English per protocol */}
           <h1 className="text-lg font-black tracking-tight text-red-500">🛡️ GUARDIAN</h1>
           <div className="flex items-center gap-2">
             {lowBandwidth && <span className="text-[10px] px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded-full">{t.lowBandwidthActive}</span>}
-            <button onClick={() => setShowSettings(true)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-sm">⚙️</button>
+            {/* Phase 10: z-index 1002 — settings gear never overlaps SOS (z-1000) */}
+            <button onClick={() => setShowSettings(true)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-sm z-[1002]">⚙️</button>
           </div>
         </div>
         <div className="flex gap-1.5 px-3 pb-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {FILTER_CATEGORIES.map(f => (
             <button key={f.id} onClick={() => setActiveCategory(f.id)}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+              className={`flex items-center gap-1 ${btnPad} py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
                 activeCategory === f.id
                   ? 'bg-red-500 text-white ring-2 ring-red-400 ring-offset-1 ring-offset-black shadow-[0_0_12px_rgba(239,68,68,0.5)]'
                   : isDark ? 'bg-white/10 text-white/70 hover:bg-white/20' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
@@ -531,7 +471,7 @@ export default function App() {
           <div className={`mt-1 ${surface} rounded-xl border ${border} overflow-hidden shadow-2xl`}>
             {searchResults.map((r: any, i: number) => (
               <button key={i} onClick={() => { setMapCenter(r.coords); setMapZoom(14); setSearchQuery(''); }}
-                className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 border-b ${border}`}>
+                className={`w-full ${isRtl ? 'text-right' : 'text-left'} px-4 py-2.5 text-sm hover:bg-white/10 border-b ${border}`}>
                 📍 {r.name} <span className={textSub}>— {r.ar}</span>
               </button>
             ))}
@@ -539,8 +479,8 @@ export default function App() {
         )}
       </div>
 
-      {/* ─── BOTTOM BAR ───────────────────────────────────────────────── */}
-      <div className={`absolute bottom-0 left-0 right-0 z-[1000] ${surface}/90 backdrop-blur-xl border-t ${border}`}>
+      {/* ─── BOTTOM BAR — z-[999] so SOS/SAFE don't overlap modals ──── */}
+      <div className={`absolute bottom-0 left-0 right-0 z-[999] ${surface}/90 backdrop-blur-xl border-t ${border}`}>
         <div className="flex justify-around py-2">
           {[
             { icon: '🧭', label: t.safestPath, action: () => setShowRouting(true) },
@@ -552,12 +492,13 @@ export default function App() {
             </button>
           ))}
           <button onClick={() => setShowIAmSafe(true)}
-            className="btn-safe-pulse flex flex-col items-center gap-0.5 text-[10px] font-bold text-green-400">
-            <span className="text-lg bg-green-500 text-white px-2.5 py-0.5 rounded-md font-black">✅ SAFE</span>
+            className={`btn-safe-pulse flex flex-col items-center gap-0.5 text-[10px] font-bold text-green-400 ${isRtl ? 'min-w-[60px]' : ''}`}>
+            <span className={`text-lg bg-green-500 text-white ${isRtl ? 'px-3' : 'px-2.5'} py-0.5 rounded-md font-black`}>✅ SAFE</span>
             <span>{t.iAmSafe}</span>
           </button>
-          <button onClick={() => setShowEmergency(true)} className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-red-400">
-            <span className="text-lg bg-red-500 text-white px-2 py-0.5 rounded-md font-black">SOS</span>
+          <button onClick={() => setShowEmergency(true)}
+            className={`flex flex-col items-center gap-0.5 text-[10px] font-bold text-red-400 ${isRtl ? 'min-w-[52px]' : ''}`}>
+            <span className={`text-lg bg-red-500 text-white ${isRtl ? 'px-3' : 'px-2'} py-0.5 rounded-md font-black`}>SOS</span>
             <span>{t.emergency}</span>
           </button>
         </div>
@@ -576,15 +517,15 @@ export default function App() {
           <select value={routeStart} onChange={e => setRouteStart(e.target.value)}
             className={`w-full mb-2 p-2 rounded-lg text-sm ${isDark ? 'bg-white/10 text-white' : 'bg-gray-100'} border ${border}`}>
             <option value="">{t.from}</option>
-            {Object.keys(DISTRICT_COORDINATES).map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
+            {Object.entries(DISTRICT_NAMES).map(([d, names]) => <option key={d} value={d}>{names[lang]}</option>)}
           </select>
           <select value={routeEnd} onChange={e => setRouteEnd(e.target.value)}
             className={`w-full mb-3 p-2 rounded-lg text-sm ${isDark ? 'bg-white/10 text-white' : 'bg-gray-100'} border ${border}`}>
             <option value="">{t.to}</option>
-            {Object.keys(DISTRICT_COORDINATES).map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
+            {Object.entries(DISTRICT_NAMES).map(([d, names]) => <option key={d} value={d}>{names[lang]}</option>)}
           </select>
           <button onClick={calculateRoute} disabled={isRouting || !routeStart || !routeEnd}
-            className="w-full py-2.5 rounded-xl bg-blue-500 text-white font-bold text-sm disabled:opacity-40">
+            className={`w-full py-2.5 rounded-xl bg-blue-500 text-white font-bold text-sm disabled:opacity-40`}>
             {isRouting ? t.calculating : t.calculate}
           </button>
           {routeInfo && (
@@ -618,16 +559,16 @@ export default function App() {
         </div>
       )}
 
-      {/* Settings */}
+      {/* Settings — z-[2000], language toggle in safe z-layer */}
       {showSettings && (
         <div className="absolute inset-0 z-[2000] bg-black/60" onClick={() => setShowSettings(false)}>
-          <div className={`absolute ${isRtl ? 'left-0' : 'right-0'} top-0 bottom-0 w-72 ${surface} border-l ${border} p-5`} onClick={e => e.stopPropagation()}>
+          <div className={`absolute ${isRtl ? 'left-0' : 'right-0'} top-0 bottom-0 w-72 ${surface} ${isRtl ? 'border-r' : 'border-l'} ${border} p-5`} onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold mb-5">⚙️ {t.settings}</h3>
             <label className="text-xs font-semibold mb-2 block">{t.language}</label>
             <div className="flex gap-2 mb-4">
               {(['en', 'ar', 'fr'] as const).map(l => (
                 <button key={l} onClick={() => setLang(l)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${lang === l ? 'bg-blue-500 text-white' : isDark ? 'bg-white/10' : 'bg-gray-200'}`}>
+                  className={`${isRtl ? 'px-4' : 'px-3'} py-1.5 rounded-lg text-xs font-bold ${lang === l ? 'bg-blue-500 text-white' : isDark ? 'bg-white/10' : 'bg-gray-200'}`}>
                   {l === 'en' ? 'English' : l === 'ar' ? 'العربية' : 'Français'}
                 </button>
               ))}
@@ -636,7 +577,7 @@ export default function App() {
             <div className="flex gap-2 mb-4">
               {(['dark', 'light'] as const).map(th => (
                 <button key={th} onClick={() => setTheme(th)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${theme === th ? 'bg-blue-500 text-white' : isDark ? 'bg-white/10' : 'bg-gray-200'}`}>
+                  className={`${isRtl ? 'px-4' : 'px-3'} py-1.5 rounded-lg text-xs font-bold ${theme === th ? 'bg-blue-500 text-white' : isDark ? 'bg-white/10' : 'bg-gray-200'}`}>
                   {th === 'dark' ? t.dark : t.light}
                 </button>
               ))}
@@ -663,9 +604,7 @@ export default function App() {
         <div className="absolute inset-0 z-[2000] bg-black/60 flex items-end" onClick={() => setShowIAmSafe(false)}>
           <div className={`w-full max-w-md mx-auto ${surface} rounded-t-3xl p-5 border-t ${border}`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
-              <div className="safe-pulse-icon w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center border-2 border-green-500">
-                <span className="text-2xl">💚</span>
-              </div>
+              <div className="safe-pulse-icon w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center border-2 border-green-500"><span className="text-2xl">💚</span></div>
               <div>
                 <h3 className="text-base font-black text-green-400">{t.iAmSafe}</h3>
                 <p className="text-[11px] opacity-60">{t.iAmSafeDesc}</p>
@@ -681,7 +620,7 @@ export default function App() {
                       : `${isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-gray-50 hover:bg-gray-100'} border ${border}`
                   }`}>
                   <span className="block text-sm mb-0.5">{names[lang]}</span>
-                  {activeSafeDistricts[id] && <span className="text-[9px] text-green-500">💚 {activeSafeDistricts[id].count} safe</span>}
+                  {activeSafeDistricts[id] && <span className="text-[9px] text-green-500">💚 {activeSafeDistricts[id].count} {t.safeLabel}</span>}
                 </button>
               ))}
             </div>
@@ -717,7 +656,7 @@ export default function App() {
               <div className="flex gap-2">
                 {([['all', t.feedAll], ['airstrikes', t.feedAirstrikes], ['roads', t.feedRoads], ['community', t.communityTab]] as const).map(([key, label]) => (
                   <button key={key} onClick={() => setFeedFilter(key as any)}
-                    className={`px-3 py-1 rounded-full text-[10px] font-bold ${
+                    className={`${btnPad} py-1 rounded-full text-[10px] font-bold ${
                       feedFilter === key ? key === 'community' ? 'bg-green-500 text-white' : 'bg-red-500 text-white' : isDark ? 'bg-white/10' : 'bg-gray-200'
                     }`}>
                     {key === 'community' ? `💚 ${label}` : label}
@@ -740,7 +679,7 @@ export default function App() {
                       <span className="text-[10px] opacity-50">{timeAgo(ci.createdAt)}</span>
                     </div>
                   </div>
-                )) : <div className="text-center py-8 opacity-40 text-sm">{t.communityPulse}: No check-ins yet</div>
+                )) : <div className="text-center py-8 opacity-40 text-sm">{t.noCheckIns}</div>
               ) : feedItems.map(item => (
                 <div key={item.id} className={`p-3 rounded-xl ${isDark ? 'bg-white/5' : 'bg-gray-50'} border ${border}`}>
                   <div className="flex justify-between items-start">
@@ -766,9 +705,9 @@ export default function App() {
         </div>
       )}
 
-      {/* SOS */}
+      {/* SOS — z-[2001] to clear bottom bar z-[999] */}
       {showEmergency && (
-        <div className="absolute inset-0 z-[2000] bg-black/70" onClick={() => setShowEmergency(false)}>
+        <div className="absolute inset-0 z-[2001] bg-black/70" onClick={() => setShowEmergency(false)}>
           <div className={`absolute bottom-0 left-0 right-0 ${surface} rounded-t-3xl border-t ${border} p-5`} onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold mb-4 text-red-400">🆘 {t.sosTitle}</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -777,7 +716,7 @@ export default function App() {
                   className={`flex items-center gap-3 p-3 rounded-xl ${isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-gray-50 hover:bg-gray-100'} border ${border}`}>
                   <span className="text-2xl" style={{ filter: `drop-shadow(0 0 4px ${c.color})` }}>{c.icon}</span>
                   <div>
-                    <span className="text-xs font-bold block">{c.name}</span>
+                    <span className="text-xs font-bold block">{c[lang as 'en' | 'ar' | 'fr']}</span>
                     <span className="text-lg font-black" style={{ color: c.color }}>{c.number}</span>
                   </div>
                 </a>

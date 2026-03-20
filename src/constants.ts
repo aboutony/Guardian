@@ -1,4 +1,4 @@
-// constants.ts — Guardian Lebanon — Unified Data Engine
+// constants.ts — Guardian Lebanon — Phase 10: Deep Language Synchronization
 // All static data, category arrays, translations, map config
 
 export type Language = 'en' | 'ar' | 'fr';
@@ -29,24 +29,20 @@ export interface MarkerPoint {
   verificationCount?: number;
   roadOpen?: boolean;
   // Phase 8: Dynamic Shelter Intelligence
-  capacity?: number;     // total shelter capacity (beds/slots)
-  occupancy?: number;    // current occupancy count
-  lastUpdated?: number;  // timestamp of last volunteer report
+  capacity?: number;
+  occupancy?: number;
+  lastUpdated?: number;
   // Phase 9: Multi-User Verification
-  trustScore?: number;   // 0-100 trust rating (higher = more verified)
-  disputeCount?: number; // number of user disputes
+  trustScore?: number;
+  disputeCount?: number;
 }
 
 // ─── Verification Thresholds ─────────────────────────────────────────────────
-// Reports with > DISPUTE_THRESHOLD disputes are marked UNVERIFIED (40% opacity)
 export const DISPUTE_THRESHOLD = 5;
 
 // ─── Shelter Status Thresholds ───────────────────────────────────────────────
-// 0-70% → Open (Green) | 71-95% → Limited (Orange) | 96-100% → Full (Red)
 export const SHELTER_STATUS_THRESHOLDS = {
-  open: 0.70,      // ≤ 70%
-  limited: 0.95,   // 71-95%
-  full: 1.0,       // 96-100%
+  open: 0.70, limited: 0.95, full: 1.0,
 } as const;
 
 export function getShelterStatus(occupancy: number, capacity: number): { label: string; color: string; percent: number } {
@@ -55,6 +51,16 @@ export function getShelterStatus(occupancy: number, capacity: number): { label: 
   if (pct <= SHELTER_STATUS_THRESHOLDS.open) return { label: 'open', color: '#22c55e', percent: pct };
   if (pct <= SHELTER_STATUS_THRESHOLDS.limited) return { label: 'limited', color: '#f97316', percent: pct };
   return { label: 'full', color: '#ef4444', percent: pct };
+}
+
+// ─── Browser Language Auto-Detect ────────────────────────────────────────────
+export function detectBrowserLanguage(): Language {
+  try {
+    const nav = navigator.language?.toLowerCase() || '';
+    if (nav.startsWith('ar')) return 'ar';
+    if (nav.startsWith('fr')) return 'fr';
+  } catch {}
+  return 'en';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -133,16 +139,10 @@ export const ROAD_BLOCKS: MarkerPoint[] = [
 //  UNIFIED DATA ENGINE — keys MUST match FILTER_CATEGORIES ids
 // ═══════════════════════════════════════════════════════════════════════════════
 export const GUARDIAN_DATA: Record<string, MarkerPoint[]> = {
-  airstrikes: AIRSTRIKES,
-  hospitals: HOSPITALS,
-  bakeries: BAKERIES,
-  pharmacies: PHARMACIES,
-  fuel: FUEL_STATIONS,
-  ngo: NGOS,
-  roads: ROAD_BLOCKS,
+  airstrikes: AIRSTRIKES, hospitals: HOSPITALS, bakeries: BAKERIES,
+  pharmacies: PHARMACIES, fuel: FUEL_STATIONS, ngo: NGOS, roads: ROAD_BLOCKS,
 };
 
-// All markers combined (for 'all' filter)
 export const ALL_MARKERS: MarkerPoint[] = [
   ...HOSPITALS, ...AIRSTRIKES, ...BAKERIES, ...PHARMACIES,
   ...FUEL_STATIONS, ...NGOS, ...ROAD_BLOCKS,
@@ -162,30 +162,15 @@ export const FILTER_CATEGORIES = [
 
 // ─── Icon color mapping per category ─────────────────────────────────────────
 export const MARKER_COLORS: Record<string, string> = {
-  airstrike: '#dc2626',
-  hospital: '#2563eb',
-  bakery: '#a16207',
-  pharmacy: '#7c3aed',
-  fuel: '#059669',
-  ngo: '#0891b2',
-  road_block: '#ea580c',
-  user: '#3b82f6',
-  all: '#6b7280',
-  safe_pulse: '#22c55e',
+  airstrike: '#dc2626', hospital: '#2563eb', bakery: '#a16207', pharmacy: '#7c3aed',
+  fuel: '#059669', ngo: '#0891b2', road_block: '#ea580c', user: '#3b82f6',
+  all: '#6b7280', safe_pulse: '#22c55e',
 };
 
-// ─── Icon emoji mapping per category ─────────────────────────────────────────
 export const MARKER_EMOJI: Record<string, string> = {
-  airstrike: '💥',
-  hospital: '🏥',
-  bakery: '🍞',
-  pharmacy: '💊',
-  fuel: '⛽',
-  ngo: '🤝',
-  road_block: '🚧',
-  user: '📍',
-  all: '📍',
-  safe_pulse: '💚',
+  airstrike: '💥', hospital: '🏥', bakery: '🍞', pharmacy: '💊',
+  fuel: '⛽', ngo: '🤝', road_block: '🚧', user: '📍',
+  all: '📍', safe_pulse: '💚',
 };
 
 // ─── District Coords ─────────────────────────────────────────────────────────
@@ -197,7 +182,6 @@ export const DISTRICT_COORDINATES: Record<string, [number, number]> = {
 };
 export const DISTRICT_COORDS = DISTRICT_COORDINATES;
 
-// ─── District Display Names (for Community Feed) ─────────────────────────────
 export const DISTRICT_NAMES: Record<string, { en: string; ar: string; fr: string }> = {
   dahieh: { en: 'Dahieh', ar: 'الضاحية', fr: 'Dahieh' },
   beirut: { en: 'Beirut', ar: 'بيروت', fr: 'Beyrouth' },
@@ -211,14 +195,14 @@ export const DISTRICT_NAMES: Record<string, { en: string; ar: string; fr: string
   zahle: { en: 'Zahle', ar: 'زحلة', fr: 'Zahlé' },
 };
 
-// ─── Emergency Contacts — SOS panel ──────────────────────────────────────────
+// ─── Emergency Contacts — Localized names ────────────────────────────────────
 export const EMERGENCY_CONTACTS = [
-  { name: 'Hospitals',     number: '140',  icon: '🏥', color: '#2563eb' },
-  { name: 'Civil Defense', number: '125',  icon: '🚒', color: '#dc2626' },
-  { name: 'Red Cross',     number: '1760', icon: '⛑️', color: '#ef4444' },
-  { name: 'ISF Police',    number: '112',  icon: '🚔', color: '#3b82f6' },
-  { name: 'Army',          number: '1701', icon: '🪖', color: '#16a34a' },
-  { name: 'Fire Dept',     number: '175',  icon: '🔥', color: '#f97316' },
+  { number: '140',  icon: '🏥', color: '#2563eb', en: 'Hospitals',     ar: 'مستشفيات',    fr: 'Hôpitaux' },
+  { number: '125',  icon: '🚒', color: '#dc2626', en: 'Civil Defense', ar: 'الدفاع المدني', fr: 'Défense civile' },
+  { number: '1760', icon: '⛑️', color: '#ef4444', en: 'Red Cross',     ar: 'الصليب الأحمر', fr: 'Croix-Rouge' },
+  { number: '112',  icon: '🚔', color: '#3b82f6', en: 'ISF Police',    ar: 'قوى الأمن',    fr: 'Police FSI' },
+  { number: '1701', icon: '🪖', color: '#16a34a', en: 'Army',          ar: 'الجيش',        fr: 'Armée' },
+  { number: '175',  icon: '🔥', color: '#f97316', en: 'Fire Dept',     ar: 'الإطفاء',      fr: 'Pompiers' },
 ];
 
 // ─── Danger Types ────────────────────────────────────────────────────────────
@@ -232,97 +216,254 @@ export const DANGER_TYPES = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  TRANSLATIONS
+//  TRANSLATIONS — Phase 10: Deep Language Synchronization
+//  Categories, Social, Status, Navigation, Shelter, Verification — FULL COVER
 // ═══════════════════════════════════════════════════════════════════════════════
 export const TRANSLATIONS: Record<Language, Record<string, string>> = {
   en: {
-    appName: 'GUARDIAN', searchPlaceholder: 'Search village, city or address...',
-    safestPath: 'Find Safest Path', reportDanger: 'Report Danger',
-    liveFeed: 'Live Safety Feed', emergency: 'EMERGENCY',
-    settings: 'Settings', language: 'Language', theme: 'Theme',
-    dark: 'Dark', light: 'Light',
-    lowBandwidth: 'Low Bandwidth', lowBandwidthActive: '📡 Low BW',
-    lowPower: 'Low Power', close: 'Close',
-    from: 'From', to: 'To', calculate: 'Calculate Route',
-    calculating: 'Calculating...', routeFound: 'Safe path found',
-    dangerAvoided: 'danger zones avoided', minutes: 'min',
-    verified: '✅ Verified', community: 'Community', votes: 'votes',
-    open: '🟢 Open', closed: '🔴 Closed', blocked: '🔴 Blocked',
-    reportType: 'Report Type', details: 'Details', submit: 'Submit Report',
-    submitted: '✅ Report submitted', shareLocation: 'Your Location',
-    shareQR: 'Share Location QR', iAmSafe: '✅ I Am Safe',
-    markedSafe: '✅ Marked safe!', feedAll: 'All',
-    feedAirstrikes: 'Strikes', feedRoads: 'Roads',
-    callNow: 'Call Now', sosTitle: 'Emergency Contacts',
-    communityTab: 'Community', communityCheckIn: 'is SAFE in',
+    // ── Navigation ─────────────────────────────
+    appName: 'GUARDIAN',
+    searchPlaceholder: 'Search village, city or address...',
+    safestPath: 'Safest Path',
+    reportDanger: 'Report Danger',
+    liveFeed: 'Live Feed',
+    emergency: 'EMERGENCY',
+    settings: 'Settings',
+    language: 'Language',
+    theme: 'Theme',
+    dark: 'Dark',
+    light: 'Light',
+    close: 'Close',
+    // ── Status ─────────────────────────────────
+    open: '🟢 Open',
+    closed: '🔴 Closed',
+    blocked: '🔴 Blocked',
+    lowBandwidth: 'Low Bandwidth',
+    lowBandwidthActive: '📡 Low BW',
+    lowPower: 'Low Power',
+    // ── Route ──────────────────────────────────
+    from: 'From',
+    to: 'To',
+    calculate: 'Calculate Route',
+    calculating: 'Calculating...',
+    routeFound: 'Safe path found',
+    routeError: '⚠️ Route calculation error',
+    dangerAvoided: 'danger zones avoided',
+    minutes: 'min',
+    // ── Report ─────────────────────────────────
+    reportType: 'Report Type',
+    details: 'Details',
+    submit: 'Submit Report',
+    submitted: '✅ Report submitted',
+    userReport: 'User Report',
+    // ── Social ─────────────────────────────────
+    verified: '✅ Verified',
+    community: 'Community',
+    votes: 'votes',
+    shareLocation: 'Your Location',
+    shareQR: 'Share Location QR',
+    iAmSafe: '✅ I Am Safe',
+    markedSafe: '✅ Marked safe!',
     iAmSafeDesc: 'Let your community know you are safe',
-    safeIn: 'Safe in', safeNow: 'Mark Safe', selectDistrict: 'Select District',
-    communityPulse: 'Community Pulse', recentSafe: 'recent safety check-ins',
-    shelterCapacity: 'Current Capacity', shelterFull: 'FULL', shelterLimited: 'Limited',
-    shelterOpen: 'Available', reportStatus: 'Report Status', occupancy: 'Occupancy',
-    lastUpdate: 'Last update', stillSpace: 'Still has space', almostFull: 'Almost full',
-    confirmReport: 'Confirm', disputeReport: 'Dispute', unverified: '⚠️ UNVERIFIED',
-    trustScore: 'Trust Score', contributionPoint: '⭐ Contribution Points +1',
-    disputeRecorded: '❌ Dispute recorded', confirmations: 'confirmations', disputes: 'disputes',
+    safeIn: 'Safe in',
+    safeNow: 'Mark Safe',
+    selectDistrict: 'Select District',
+    communityPulse: 'Community Pulse',
+    recentSafe: 'recent safety check-ins',
+    communityTab: 'Community',
+    communityCheckIn: 'is SAFE in',
+    noCheckIns: 'No community check-ins yet',
+    safeLabel: 'safe',
+    callNow: 'Call Now',
+    sosTitle: 'Emergency Contacts',
+    // ── Feed ───────────────────────────────────
+    feedAll: 'All',
+    feedAirstrikes: 'Strikes',
+    feedRoads: 'Roads',
+    // ── Shelter (Phase 8) ──────────────────────
+    shelterCapacity: 'Current Capacity',
+    shelterFull: 'FULL',
+    shelterLimited: 'Limited',
+    shelterOpen: 'Available',
+    reportStatus: 'Report Status',
+    occupancy: 'Occupancy',
+    lastUpdate: 'Last update',
+    stillSpace: 'Still has space',
+    almostFull: 'Almost full',
+    // ── Verification (Phase 9) ─────────────────
+    confirmReport: 'Confirm',
+    disputeReport: 'Dispute',
+    unverified: '⚠️ UNVERIFIED',
+    trustScore: 'Trust Score',
+    contributionPoint: '⭐ Contribution Points +1',
+    disputeRecorded: '❌ Dispute recorded',
+    confirmations: 'confirmations',
+    disputes: 'disputes',
+    // ── Phase 10: extras ───────────────────────
+    autoDetected: 'Language auto-detected',
   },
   ar: {
-    appName: 'الحارس', searchPlaceholder: 'ابحث عن قرية، مدينة أو عنوان...',
-    safestPath: 'أوجد أسلم طريق', reportDanger: 'بلّغ عن خطر',
-    liveFeed: 'بث السلامة', emergency: 'طوارئ',
-    settings: 'الإعدادات', language: 'اللغة', theme: 'المظهر',
-    dark: 'داكن', light: 'فاتح',
-    lowBandwidth: 'نطاق ترددي منخفض', lowBandwidthActive: '📡 نطاق منخفض',
-    lowPower: 'طاقة منخفضة', close: 'إغلاق',
-    from: 'من', to: 'إلى', calculate: 'احسب المسار',
-    calculating: 'جارٍ الحساب...', routeFound: 'تم إيجاد مسار آمن',
-    dangerAvoided: 'مناطق خطر تم تجنبها', minutes: 'دق',
-    verified: '✅ موثّق', community: 'مجتمع', votes: 'أصوات',
-    open: '🟢 مفتوح', closed: '🔴 مغلق', blocked: '🔴 مسدود',
-    reportType: 'نوع البلاغ', details: 'تفاصيل', submit: 'إرسال البلاغ',
-    submitted: '✅ تم الإرسال', shareLocation: 'موقعك',
-    shareQR: 'مشاركة QR', iAmSafe: '✅ أنا بأمان',
-    markedSafe: '✅ تم التأشير', feedAll: 'الكل',
-    feedAirstrikes: 'غارات', feedRoads: 'طرق',
-    callNow: 'اتصل الآن', sosTitle: 'أرقام الطوارئ',
-    communityTab: 'مجتمع', communityCheckIn: 'بأمان في',
+    // ── Navigation ─────────────────────────────
+    appName: 'GUARDIAN',
+    searchPlaceholder: 'ابحث عن قرية، مدينة أو عنوان...',
+    safestPath: 'أسلم طريق',
+    reportDanger: 'بلّغ عن خطر',
+    liveFeed: 'بث مباشر',
+    emergency: 'طوارئ',
+    settings: 'الإعدادات',
+    language: 'اللغة',
+    theme: 'المظهر',
+    dark: 'داكن',
+    light: 'فاتح',
+    close: 'إغلاق',
+    // ── Status ─────────────────────────────────
+    open: '🟢 مفتوح',
+    closed: '🔴 مغلق',
+    blocked: '🔴 مسدود',
+    lowBandwidth: 'نطاق ترددي منخفض',
+    lowBandwidthActive: '📡 نطاق منخفض',
+    lowPower: 'طاقة منخفضة',
+    // ── Route ──────────────────────────────────
+    from: 'من',
+    to: 'إلى',
+    calculate: 'احسب المسار',
+    calculating: 'جارٍ الحساب...',
+    routeFound: 'تم إيجاد مسار آمن',
+    routeError: '⚠️ خطأ في حساب المسار',
+    dangerAvoided: 'مناطق خطر تم تجنبها',
+    minutes: 'دق',
+    // ── Report ─────────────────────────────────
+    reportType: 'نوع البلاغ',
+    details: 'تفاصيل',
+    submit: 'إرسال البلاغ',
+    submitted: '✅ تم الإرسال',
+    userReport: 'بلاغ مستخدم',
+    // ── Social ─────────────────────────────────
+    verified: '✅ موثّق',
+    community: 'مجتمع',
+    votes: 'أصوات',
+    shareLocation: 'موقعك',
+    shareQR: 'مشاركة QR',
+    iAmSafe: '✅ أنا بأمان',
+    markedSafe: '✅ تم التأشير',
     iAmSafeDesc: 'أخبر مجتمعك أنك بأمان',
-    safeIn: 'بأمان في', safeNow: 'تأشير آمن', selectDistrict: 'اختر المنطقة',
-    communityPulse: 'نبض المجتمع', recentSafe: 'تأشيرات أمان حديثة',
-    shelterCapacity: 'السعة الحالية', shelterFull: 'ممتلئ', shelterLimited: 'محدود',
-    shelterOpen: 'متاح', reportStatus: 'بلّغ عن الحالة', occupancy: 'الإشغال',
-    lastUpdate: 'آخر تحديث', stillSpace: 'لا يزال متاحاً', almostFull: 'شبه ممتلئ',
-    confirmReport: 'تأكيد', disputeReport: 'اعتراض', unverified: '⚠️ غير موثّق',
-    trustScore: 'مؤشر الثقة', contributionPoint: '⭐ نقاط المساهمة +1',
-    disputeRecorded: '❌ تم تسجيل الاعتراض', confirmations: 'تأكيدات', disputes: 'اعتراضات',
+    safeIn: 'بأمان في',
+    safeNow: 'تأشير آمن',
+    selectDistrict: 'اختر المنطقة',
+    communityPulse: 'نبض المجتمع',
+    recentSafe: 'تأشيرات أمان حديثة',
+    communityTab: 'مجتمع',
+    communityCheckIn: 'بأمان في',
+    noCheckIns: 'لا توجد تأشيرات أمان بعد',
+    safeLabel: 'آمن',
+    callNow: 'اتصل الآن',
+    sosTitle: 'أرقام الطوارئ',
+    // ── Feed ───────────────────────────────────
+    feedAll: 'الكل',
+    feedAirstrikes: 'غارات',
+    feedRoads: 'طرق',
+    // ── Shelter (Phase 8) ──────────────────────
+    shelterCapacity: 'السعة الحالية',
+    shelterFull: 'ممتلئ',
+    shelterLimited: 'محدود',
+    shelterOpen: 'متاح',
+    reportStatus: 'بلّغ عن الحالة',
+    occupancy: 'الإشغال',
+    lastUpdate: 'آخر تحديث',
+    stillSpace: 'لا يزال متاحاً',
+    almostFull: 'شبه ممتلئ',
+    // ── Verification (Phase 9) ─────────────────
+    confirmReport: 'تأكيد',
+    disputeReport: 'اعتراض',
+    unverified: '⚠️ غير موثّق',
+    trustScore: 'مؤشر الثقة',
+    contributionPoint: '⭐ نقاط المساهمة +1',
+    disputeRecorded: '❌ تم تسجيل الاعتراض',
+    confirmations: 'تأكيدات',
+    disputes: 'اعتراضات',
+    // ── Phase 10: extras ───────────────────────
+    autoDetected: 'تم كشف اللغة تلقائياً',
   },
   fr: {
-    appName: 'GUARDIAN', searchPlaceholder: 'Chercher village, ville ou adresse...',
-    safestPath: 'Chemin le plus sûr', reportDanger: 'Signaler Danger',
-    liveFeed: 'Flux Sécurité', emergency: 'URGENCE',
-    settings: 'Paramètres', language: 'Langue', theme: 'Thème',
-    dark: 'Sombre', light: 'Clair',
-    lowBandwidth: 'Faible débit', lowBandwidthActive: '📡 Bas débit',
-    lowPower: 'Faible conso', close: 'Fermer',
-    from: 'De', to: 'À', calculate: 'Calculer',
-    calculating: 'Calcul...', routeFound: 'Chemin sûr trouvé',
-    dangerAvoided: 'zones de danger évitées', minutes: 'min',
-    verified: '✅ Vérifié', community: 'Communauté', votes: 'votes',
-    open: '🟢 Ouvert', closed: '🔴 Fermé', blocked: '🔴 Bloqué',
-    reportType: 'Type de rapport', details: 'Détails', submit: 'Envoyer',
-    submitted: '✅ Envoyé', shareLocation: 'Votre position',
-    shareQR: 'Partager QR', iAmSafe: '✅ Je suis en sécurité',
-    markedSafe: '✅ Marqué!', feedAll: 'Tout',
-    feedAirstrikes: 'Frappes', feedRoads: 'Routes',
-    callNow: 'Appeler', sosTitle: "Contacts d'urgence",
-    communityTab: 'Communauté', communityCheckIn: 'est EN SÉCURITÉ à',
+    // ── Navigation ─────────────────────────────
+    appName: 'GUARDIAN',
+    searchPlaceholder: 'Chercher village, ville ou adresse...',
+    safestPath: 'Chemin sûr',
+    reportDanger: 'Signaler Danger',
+    liveFeed: 'Flux en direct',
+    emergency: 'URGENCE',
+    settings: 'Paramètres',
+    language: 'Langue',
+    theme: 'Thème',
+    dark: 'Sombre',
+    light: 'Clair',
+    close: 'Fermer',
+    // ── Status ─────────────────────────────────
+    open: '🟢 Ouvert',
+    closed: '🔴 Fermé',
+    blocked: '🔴 Bloqué',
+    lowBandwidth: 'Faible débit',
+    lowBandwidthActive: '📡 Bas débit',
+    lowPower: 'Faible conso',
+    // ── Route ──────────────────────────────────
+    from: 'De',
+    to: 'À',
+    calculate: 'Calculer',
+    calculating: 'Calcul...',
+    routeFound: 'Chemin sûr trouvé',
+    routeError: '⚠️ Erreur de calcul',
+    dangerAvoided: 'zones de danger évitées',
+    minutes: 'min',
+    // ── Report ─────────────────────────────────
+    reportType: 'Type de rapport',
+    details: 'Détails',
+    submit: 'Envoyer',
+    submitted: '✅ Envoyé',
+    userReport: 'Rapport utilisateur',
+    // ── Social ─────────────────────────────────
+    verified: '✅ Vérifié',
+    community: 'Communauté',
+    votes: 'votes',
+    shareLocation: 'Votre position',
+    shareQR: 'Partager QR',
+    iAmSafe: '✅ Je suis en sécurité',
+    markedSafe: '✅ Marqué!',
     iAmSafeDesc: 'Informez votre communauté que vous êtes en sécurité',
-    safeIn: 'En sécurité à', safeNow: 'Marquer sûr', selectDistrict: 'Choisir district',
-    communityPulse: 'Pouls communautaire', recentSafe: 'check-ins récents',
-    shelterCapacity: 'Capacité actuelle', shelterFull: 'COMPLET', shelterLimited: 'Limité',
-    shelterOpen: 'Disponible', reportStatus: 'Signaler état', occupancy: 'Occupation',
-    lastUpdate: 'Dernière MAJ', stillSpace: 'Encore de la place', almostFull: 'Presque plein',
-    confirmReport: 'Confirmer', disputeReport: 'Contester', unverified: '⚠️ NON VÉRIFIÉ',
-    trustScore: 'Score de confiance', contributionPoint: '⭐ Points de contribution +1',
-    disputeRecorded: '❌ Contestation enregistrée', confirmations: 'confirmations', disputes: 'contestations',
+    safeIn: 'En sécurité à',
+    safeNow: 'Marquer sûr',
+    selectDistrict: 'Choisir district',
+    communityPulse: 'Pouls communautaire',
+    recentSafe: 'check-ins récents',
+    communityTab: 'Communauté',
+    communityCheckIn: 'est EN SÉCURITÉ à',
+    noCheckIns: 'Aucun check-in communautaire',
+    safeLabel: 'sûr',
+    callNow: 'Appeler',
+    sosTitle: "Contacts d'urgence",
+    // ── Feed ───────────────────────────────────
+    feedAll: 'Tout',
+    feedAirstrikes: 'Frappes',
+    feedRoads: 'Routes',
+    // ── Shelter (Phase 8) ──────────────────────
+    shelterCapacity: 'Capacité actuelle',
+    shelterFull: 'COMPLET',
+    shelterLimited: 'Limité',
+    shelterOpen: 'Disponible',
+    reportStatus: 'Signaler état',
+    occupancy: 'Occupation',
+    lastUpdate: 'Dernière MAJ',
+    stillSpace: 'Encore de la place',
+    almostFull: 'Presque plein',
+    // ── Verification (Phase 9) ─────────────────
+    confirmReport: 'Confirmer',
+    disputeReport: 'Contester',
+    unverified: '⚠️ NON VÉRIFIÉ',
+    trustScore: 'Score de confiance',
+    contributionPoint: '⭐ Points de contribution +1',
+    disputeRecorded: '❌ Contestation enregistrée',
+    confirmations: 'confirmations',
+    disputes: 'contestations',
+    // ── Phase 10: extras ───────────────────────
+    autoDetected: 'Langue auto-détectée',
   },
 };
