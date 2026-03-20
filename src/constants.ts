@@ -28,6 +28,26 @@ export interface MarkerPoint {
   verified?: boolean;
   verificationCount?: number;
   roadOpen?: boolean;
+  // Phase 8: Dynamic Shelter Intelligence
+  capacity?: number;     // total shelter capacity (beds/slots)
+  occupancy?: number;    // current occupancy count
+  lastUpdated?: number;  // timestamp of last volunteer report
+}
+
+// ─── Shelter Status Thresholds ───────────────────────────────────────────────
+// 0-70% → Open (Green) | 71-95% → Limited (Orange) | 96-100% → Full (Red)
+export const SHELTER_STATUS_THRESHOLDS = {
+  open: 0.70,      // ≤ 70%
+  limited: 0.95,   // 71-95%
+  full: 1.0,       // 96-100%
+} as const;
+
+export function getShelterStatus(occupancy: number, capacity: number): { label: string; color: string; percent: number } {
+  if (capacity <= 0) return { label: 'unknown', color: '#6b7280', percent: 0 };
+  const pct = Math.min(occupancy / capacity, 1);
+  if (pct <= SHELTER_STATUS_THRESHOLDS.open) return { label: 'open', color: '#22c55e', percent: pct };
+  if (pct <= SHELTER_STATUS_THRESHOLDS.limited) return { label: 'limited', color: '#f97316', percent: pct };
+  return { label: 'full', color: '#ef4444', percent: pct };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -80,18 +100,18 @@ export const FUEL_STATIONS: MarkerPoint[] = [
 ];
 
 export const NGOS: MarkerPoint[] = [
-  { id: 'lrc1', name: 'LRC Health Center - Baouchriyeh', coordinates: [33.885, 35.552], status: 'open', aidType: 'medical', hours: '24/7' },
-  { id: 'lrc2', name: 'LRC Health Center - Nabatiyeh', coordinates: [33.375, 35.482], status: 'open', aidType: 'medical', hours: '24/7' },
-  { id: 'lrc3', name: 'LRC Health Center - Saida', coordinates: [33.565, 35.375], status: 'open', aidType: 'medical', hours: '24/7' },
-  { id: 'amel1', name: 'Amel Center - Haret Hreik', coordinates: [33.845, 35.502], status: 'limited', aidType: 'multi', hours: '08:00-16:00' },
-  { id: 'amel2', name: 'Amel Center - Tyre', coordinates: [33.272, 35.203], status: 'open', aidType: 'multi', hours: '08:00-16:00' },
-  { id: 'caritas1', name: 'Caritas Center - Akkar', coordinates: [34.545, 36.078], status: 'open', aidType: 'food', hours: '09:00-17:00' },
-  { id: 'caritas2', name: 'Caritas Center - Zahle', coordinates: [33.848, 35.902], status: 'open', aidType: 'shelter', hours: '09:00-17:00' },
-  { id: 'unrwa1', name: 'UNRWA Shelter - Siblin', coordinates: [33.625, 35.452], status: 'open', aidType: 'shelter', hours: '24/7' },
-  { id: 'unrwa2', name: 'UNRWA Shelter - Nahr el-Bared', coordinates: [34.512, 35.965], status: 'limited', aidType: 'shelter', hours: '24/7' },
-  { id: 'wfp1', name: 'WFP Distribution - Tyre', coordinates: [33.275, 35.205], status: 'open', hours: '08:00-14:00' },
-  { id: 'wfp2', name: 'Water Tanker - Dahieh', coordinates: [33.852, 35.508], status: 'open', hours: '07:00-19:00' },
-  { id: 'ck1', name: 'Community Kitchen - Tripoli', coordinates: [34.438, 35.838], status: 'open', hours: '12:00-15:00' },
+  { id: 'lrc1', name: 'LRC Health Center - Baouchriyeh', coordinates: [33.885, 35.552], status: 'open', aidType: 'medical', hours: '24/7', capacity: 120, occupancy: 45, lastUpdated: Date.now() - 900000 },
+  { id: 'lrc2', name: 'LRC Health Center - Nabatiyeh', coordinates: [33.375, 35.482], status: 'open', aidType: 'medical', hours: '24/7', capacity: 80, occupancy: 62, lastUpdated: Date.now() - 1800000 },
+  { id: 'lrc3', name: 'LRC Health Center - Saida', coordinates: [33.565, 35.375], status: 'open', aidType: 'medical', hours: '24/7', capacity: 100, occupancy: 38, lastUpdated: Date.now() - 600000 },
+  { id: 'amel1', name: 'Amel Center - Haret Hreik', coordinates: [33.845, 35.502], status: 'limited', aidType: 'multi', hours: '08:00-16:00', capacity: 200, occupancy: 185, lastUpdated: Date.now() - 300000 },
+  { id: 'amel2', name: 'Amel Center - Tyre', coordinates: [33.272, 35.203], status: 'open', aidType: 'multi', hours: '08:00-16:00', capacity: 150, occupancy: 67, lastUpdated: Date.now() - 2400000 },
+  { id: 'caritas1', name: 'Caritas Center - Akkar', coordinates: [34.545, 36.078], status: 'open', aidType: 'food', hours: '09:00-17:00', capacity: 60, occupancy: 22, lastUpdated: Date.now() - 3600000 },
+  { id: 'caritas2', name: 'Caritas Center - Zahle', coordinates: [33.848, 35.902], status: 'open', aidType: 'shelter', hours: '09:00-17:00', capacity: 180, occupancy: 95, lastUpdated: Date.now() - 1200000 },
+  { id: 'unrwa1', name: 'UNRWA Shelter - Siblin', coordinates: [33.625, 35.452], status: 'open', aidType: 'shelter', hours: '24/7', capacity: 300, occupancy: 240, lastUpdated: Date.now() - 500000 },
+  { id: 'unrwa2', name: 'UNRWA Shelter - Nahr el-Bared', coordinates: [34.512, 35.965], status: 'limited', aidType: 'shelter', hours: '24/7', capacity: 250, occupancy: 242, lastUpdated: Date.now() - 180000 },
+  { id: 'wfp1', name: 'WFP Distribution - Tyre', coordinates: [33.275, 35.205], status: 'open', hours: '08:00-14:00', capacity: 500, occupancy: 180, lastUpdated: Date.now() - 7200000 },
+  { id: 'wfp2', name: 'Water Tanker - Dahieh', coordinates: [33.852, 35.508], status: 'open', hours: '07:00-19:00', capacity: 400, occupancy: 310, lastUpdated: Date.now() - 4500000 },
+  { id: 'ck1', name: 'Community Kitchen - Tripoli', coordinates: [34.438, 35.838], status: 'open', hours: '12:00-15:00', capacity: 200, occupancy: 130, lastUpdated: Date.now() - 5400000 },
 ];
 
 export const ROAD_BLOCKS: MarkerPoint[] = [
@@ -231,6 +251,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     iAmSafeDesc: 'Let your community know you are safe',
     safeIn: 'Safe in', safeNow: 'Mark Safe', selectDistrict: 'Select District',
     communityPulse: 'Community Pulse', recentSafe: 'recent safety check-ins',
+    shelterCapacity: 'Current Capacity', shelterFull: 'FULL', shelterLimited: 'Limited',
+    shelterOpen: 'Available', reportStatus: 'Report Status', occupancy: 'Occupancy',
+    lastUpdate: 'Last update', stillSpace: 'Still has space', almostFull: 'Almost full',
   },
   ar: {
     appName: 'الحارس', searchPlaceholder: 'ابحث عن قرية، مدينة أو عنوان...',
@@ -255,6 +278,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     iAmSafeDesc: 'أخبر مجتمعك أنك بأمان',
     safeIn: 'بأمان في', safeNow: 'تأشير آمن', selectDistrict: 'اختر المنطقة',
     communityPulse: 'نبض المجتمع', recentSafe: 'تأشيرات أمان حديثة',
+    shelterCapacity: 'السعة الحالية', shelterFull: 'ممتلئ', shelterLimited: 'محدود',
+    shelterOpen: 'متاح', reportStatus: 'بلّغ عن الحالة', occupancy: 'الإشغال',
+    lastUpdate: 'آخر تحديث', stillSpace: 'لا يزال متاحاً', almostFull: 'شبه ممتلئ',
   },
   fr: {
     appName: 'GUARDIAN', searchPlaceholder: 'Chercher village, ville ou adresse...',
@@ -279,5 +305,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     iAmSafeDesc: 'Informez votre communauté que vous êtes en sécurité',
     safeIn: 'En sécurité à', safeNow: 'Marquer sûr', selectDistrict: 'Choisir district',
     communityPulse: 'Pouls communautaire', recentSafe: 'check-ins récents',
+    shelterCapacity: 'Capacité actuelle', shelterFull: 'COMPLET', shelterLimited: 'Limité',
+    shelterOpen: 'Disponible', reportStatus: 'Signaler état', occupancy: 'Occupation',
+    lastUpdate: 'Dernière MAJ', stillSpace: 'Encore de la place', almostFull: 'Presque plein',
   },
 };

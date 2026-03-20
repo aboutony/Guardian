@@ -1,4 +1,4 @@
-// App.tsx — Guardian Lebanon — Phase 7: "I AM SAFE" Community Portal
+// App.tsx — Guardian Lebanon — Phase 8: Dynamic Shelter Intelligence
 // Direct GUARDIAN_DATA[activeCategory] rendering — NO intermediary state
 // lowBandwidthMode: HARD-CODED false — Stability Override
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -12,7 +12,7 @@ import {
   MAP_TILE_URL_DARK, MAP_TILE_URL_LIGHT,
   EMERGENCY_CONTACTS, FILTER_CATEGORIES,
   GUARDIAN_DATA, ALL_MARKERS, MARKER_COLORS, MARKER_EMOJI,
-  AIRSTRIKES,
+  AIRSTRIKES, NGOS, getShelterStatus,
   type Language, type Theme, type MarkerPoint,
 } from './constants';
 import { useSafetyData, type Alert } from './data/safetyData';
@@ -36,12 +36,32 @@ function buildSafePulseIcon(count: number): L.DivIcon {
   });
 }
 
+// Phase 8: Build shelter icon WITH occupancy status ring
+function buildShelterIcon(marker: MarkerPoint, size = 38): L.DivIcon {
+  const bg = MARKER_COLORS['ngo'] || '#0891b2';
+  const emoji = MARKER_EMOJI['ngo'] || '🤝';
+  const status = (marker.capacity && marker.occupancy != null)
+    ? getShelterStatus(marker.occupancy, marker.capacity) : null;
+  const ringColor = status ? status.color : 'rgba(255,255,255,0.4)';
+  const ringWidth = status ? 3 : 2;
+  return L.divIcon({
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.5),0 0 0 ${ringWidth + 2}px ${ringColor}40;border:${ringWidth}px solid ${ringColor}"><span style="font-size:${size * 0.5}px;line-height:1">${emoji}</span></div>`,
+    className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+  });
+}
+
 // Pre-build icons for each category
 const CATEGORY_ICONS: Record<string, L.DivIcon> = {};
 FILTER_CATEGORIES.forEach(f => {
   if (f.id !== 'all') CATEGORY_ICONS[f.id] = buildIcon(f.markerIcon);
 });
 const USER_ICON = buildIcon('user', 40);
+
+// Pre-build shelter icons with status rings
+const SHELTER_ICONS: Record<string, L.DivIcon> = {};
+NGOS.forEach(ngo => {
+  SHELTER_ICONS[ngo.id] = buildShelterIcon(ngo);
+});
 
 // ─── MapController ───────────────────────────────────────────────────────────
 function MapController({ center, zoom }: { center: [number, number]; zoom: number }) {
@@ -77,6 +97,8 @@ function timeAgo(ts: number): string {
 
 // Resolve which icon to use for a marker in "all" mode
 function resolveAllIcon(marker: MarkerPoint): L.DivIcon {
+  // Phase 8: check if it's an NGO with shelter data — use status ring icon
+  if (SHELTER_ICONS[marker.id]) return SHELTER_ICONS[marker.id];
   for (const cat of FILTER_CATEGORIES) {
     if (cat.id === 'all') continue;
     const arr = GUARDIAN_DATA[cat.id];
@@ -117,6 +139,13 @@ export default function App() {
   const [reportDetails, setReportDetails] = useState('');
   const [feedFilter, setFeedFilter] = useState<'all' | 'airstrikes' | 'roads' | 'community'>('all');
   const [selectedDistrict, setSelectedDistrict] = useState('beirut');
+  // Phase 8: Shelter volunteer reports stored in state (persisted via LocalStorage)
+  const [shelterOverrides, setShelterOverrides] = useState<Record<string, { occupancy: number; lastUpdated: number }>>(() => {
+    try {
+      const raw = localStorage.getItem('guardian-shelter-overrides');
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
 
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
@@ -166,7 +195,27 @@ export default function App() {
   // ── Icon for current category ──────────────────────────────────────────────
   const currentIcon: L.DivIcon = activeCategory !== 'all'
     ? (CATEGORY_ICONS[activeCategory] || buildIcon('all'))
-    : buildIcon('all'); // fallback, overridden per-marker below
+    : buildIcon('all');
+
+  // Phase 8: Resolve effective occupancy (volunteer override > static data)
+  const getEffectiveOccupancy = useCallback((marker: MarkerPoint) => {
+    const override = shelterOverrides[marker.id];
+    return {
+      occupancy: override ? override.occupancy : (marker.occupancy ?? 0),
+      lastUpdated: override ? override.lastUpdated : (marker.lastUpdated ?? 0),
+    };
+  }, [shelterOverrides]);
+
+  // Phase 8: Volunteer status report handler
+  const handleShelterReport = useCallback((markerId: string, capacity: number, reportType: 'space' | 'full') => {
+    const newOccupancy = reportType === 'space'
+      ? Math.max(0, Math.round(capacity * 0.5))
+      : Math.min(capacity, Math.round(capacity * 0.97));
+    const updated = { ...shelterOverrides, [markerId]: { occupancy: newOccupancy, lastUpdated: Date.now() } };
+    setShelterOverrides(updated);
+    try { localStorage.setItem('guardian-shelter-overrides', JSON.stringify(updated)); } catch {}
+    setToast(reportType === 'space' ? `✅ ${t.stillSpace}` : `⚠️ ${t.almostFull}`);
+  }, [shelterOverrides, t]);
 
   // ── Search ─────────────────────────────────────────────────────────────────
   const searchResults = searchQuery.trim()
@@ -240,7 +289,7 @@ export default function App() {
     setShowReport(false); setReportDetails(''); setToast(t.submitted);
   }, [reportType, reportDetails, userLocation, addAlert, t]);
 
-  // ── I AM SAFE — Submit community safety check-in ──────────────────────────
+  // ── I AM SAFE ──────────────────────────────────────────────────────────────
   const handleIAmSafe = useCallback(() => {
     addSafeCheckIn(selectedDistrict);
     const distName = DISTRICT_NAMES[selectedDistrict]?.[lang] || selectedDistrict;
@@ -254,6 +303,68 @@ export default function App() {
   const textMain = isDark ? 'text-white' : 'text-gray-900';
   const textSub = isDark ? 'text-gray-400' : 'text-gray-500';
   const border = isDark ? 'border-white/10' : 'border-gray-200';
+
+  // ── Phase 8: Shelter Capacity Popup Builder ────────────────────────────────
+  const renderShelterPopup = (marker: MarkerPoint) => {
+    const { occupancy: occ, lastUpdated: lu } = getEffectiveOccupancy(marker);
+    const cap = marker.capacity ?? 0;
+    const status = getShelterStatus(occ, cap);
+    const pctDisplay = Math.round(status.percent * 100);
+    const statusLabel = status.label === 'open' ? t.shelterOpen
+      : status.label === 'limited' ? t.shelterLimited : t.shelterFull;
+
+    return (
+      <div className="text-xs min-w-[200px]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+        <strong className="block text-sm">{marker.name}</strong>
+        {marker.aidType && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-100 text-cyan-700 inline-block mt-1">{marker.aidType}</span>}
+
+        {/* ── Capacity Progress Bar ── */}
+        {cap > 0 && (
+          <div className="mt-2">
+            <div className="flex justify-between items-center mb-1">
+              <span className="font-bold text-[10px]">{t.shelterCapacity}</span>
+              <span className="text-[10px] font-black" style={{ color: status.color }}>{statusLabel} — {pctDisplay}%</span>
+            </div>
+            <div className="w-full h-2.5 rounded-full bg-gray-200 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{ width: `${pctDisplay}%`, background: status.color }}
+              />
+            </div>
+            <div className="flex justify-between mt-1 text-[9px] text-gray-500">
+              <span>{t.occupancy}: {occ}/{cap}</span>
+              {lu > 0 && <span>{t.lastUpdate}: {timeAgo(lu)}</span>}
+            </div>
+          </div>
+        )}
+
+        {marker.hours && <span className="block text-gray-400 mt-1">🕐 {marker.hours}</span>}
+        {marker.status && (
+          <span className={`block mt-1 ${marker.status === 'open' ? 'text-green-600' : 'text-red-500'}`}>
+            {marker.status === 'open' ? t.open : t.closed}
+          </span>
+        )}
+
+        {/* ── Phase 8: Volunteer Report Buttons ── */}
+        {cap > 0 && (
+          <div className="flex gap-1.5 mt-2 pt-2 border-t border-gray-200">
+            <button
+              onClick={() => handleShelterReport(marker.id, cap, 'space')}
+              className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 transition-colors"
+            >
+              👍 {t.stillSpace}
+            </button>
+            <button
+              onClick={() => handleShelterReport(marker.id, cap, 'full')}
+              className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+            >
+              🚫 {t.almostFull}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ═════════════════════════════════════════════════════════════════════════════
   //  RENDER
@@ -284,28 +395,35 @@ export default function App() {
         )}
 
         {/* ═══ CATEGORY MARKERS — DIRECT FROM GUARDIAN_DATA ═══ */}
-        {markersToRender.map(marker => (
-          <Marker
-            key={marker.id}
-            position={marker.coordinates}
-            icon={activeCategory === 'all' ? resolveAllIcon(marker) : currentIcon}
-          >
-            <Popup>
-              <div className="text-xs min-w-[160px]">
-                <strong>{marker.name}</strong>
-                {marker.message && <p className="mt-1 text-gray-600">{marker.message}</p>}
-                {marker.status && (
-                  <span className={`block mt-1 ${marker.status === 'open' ? 'text-green-600' : 'text-red-500'}`}>
-                    {marker.status === 'open' ? t.open : t.closed}
-                  </span>
+        {markersToRender.map(marker => {
+          // Phase 8: use shelter status ring icon for NGOs
+          const isNgo = NGOS.some(n => n.id === marker.id);
+          const icon = activeCategory === 'all'
+            ? resolveAllIcon(marker)
+            : isNgo ? (SHELTER_ICONS[marker.id] || currentIcon) : currentIcon;
+
+          return (
+            <Marker key={marker.id} position={marker.coordinates} icon={icon}>
+              <Popup>
+                {/* Phase 8: enhanced popup for shelters, standard for others */}
+                {isNgo && marker.capacity ? renderShelterPopup(marker) : (
+                  <div className="text-xs min-w-[160px]">
+                    <strong>{marker.name}</strong>
+                    {marker.message && <p className="mt-1 text-gray-600">{marker.message}</p>}
+                    {marker.status && (
+                      <span className={`block mt-1 ${marker.status === 'open' ? 'text-green-600' : 'text-red-500'}`}>
+                        {marker.status === 'open' ? t.open : t.closed}
+                      </span>
+                    )}
+                    {marker.hours && <span className="block text-gray-400">🕐 {marker.hours}</span>}
+                    {marker.phone && <a href={`tel:${marker.phone}`} className="block mt-1 text-blue-500 font-bold">📞 {marker.phone}</a>}
+                    {marker.verified && <span className="block mt-1 text-green-500">{t.verified} ({marker.verificationCount})</span>}
+                  </div>
                 )}
-                {marker.hours && <span className="block text-gray-400">🕐 {marker.hours}</span>}
-                {marker.phone && <a href={`tel:${marker.phone}`} className="block mt-1 text-blue-500 font-bold">📞 {marker.phone}</a>}
-                {marker.verified && <span className="block mt-1 text-green-500">{t.verified} ({marker.verificationCount})</span>}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+              </Popup>
+            </Marker>
+          );
+        })}
 
         {/* ═══ PHASE 7: GREEN PULSE MARKERS — Community Safety ═══ */}
         {Object.entries(activeSafeDistricts).map(([districtId, { count }]) => {
@@ -380,14 +498,11 @@ export default function App() {
               <span className="text-xl">{btn.icon}</span><span className={textSub}>{btn.label}</span>
             </button>
           ))}
-
-          {/* ═══ PHASE 7: "I AM SAFE" BUTTON — Pulsing Green ═══ */}
           <button onClick={() => setShowIAmSafe(true)}
             className="btn-safe-pulse flex flex-col items-center gap-0.5 text-[10px] font-bold text-green-400">
             <span className="text-lg bg-green-500 text-white px-2.5 py-0.5 rounded-md font-black">✅ SAFE</span>
             <span>{t.iAmSafe}</span>
           </button>
-
           <button onClick={() => setShowEmergency(true)} className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-red-400">
             <span className="text-lg bg-red-500 text-white px-2 py-0.5 rounded-md font-black">SOS</span>
             <span>{t.emergency}</span>
@@ -492,11 +607,10 @@ export default function App() {
         </div>
       )}
 
-      {/* ═══ PHASE 7: "I AM SAFE" MODAL — District Selector & Check-in ═══ */}
+      {/* ═══ PHASE 7: "I AM SAFE" MODAL ═══ */}
       {showIAmSafe && (
         <div className="absolute inset-0 z-[2000] bg-black/60 flex items-end" onClick={() => setShowIAmSafe(false)}>
           <div className={`w-full max-w-md mx-auto ${surface} rounded-t-3xl p-5 border-t ${border}`} onClick={e => e.stopPropagation()}>
-            {/* Header */}
             <div className="flex items-center gap-3 mb-4">
               <div className="safe-pulse-icon w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center border-2 border-green-500">
                 <span className="text-2xl">💚</span>
@@ -506,8 +620,6 @@ export default function App() {
                 <p className="text-[11px] opacity-60">{t.iAmSafeDesc}</p>
               </div>
             </div>
-
-            {/* District Selector */}
             <label className="text-xs font-semibold mb-2 block">{t.selectDistrict}</label>
             <div className="grid grid-cols-2 gap-2 mb-4 max-h-[200px] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
               {Object.entries(DISTRICT_NAMES).map(([id, names]) => (
@@ -524,8 +636,6 @@ export default function App() {
                 </button>
               ))}
             </div>
-
-            {/* Community Pulse Summary */}
             {Object.keys(activeSafeDistricts).length > 0 && (
               <div className={`mb-4 p-3 rounded-xl ${isDark ? 'bg-green-500/5' : 'bg-green-50'} border border-green-500/20`}>
                 <p className="text-[10px] font-bold text-green-500 mb-1">💚 {t.communityPulse}</p>
@@ -538,8 +648,6 @@ export default function App() {
                 </div>
               </div>
             )}
-
-            {/* Submit */}
             <button onClick={handleIAmSafe}
               className="btn-safe-pulse w-full py-3.5 rounded-xl bg-green-500 text-white font-black text-sm tracking-wide hover:bg-green-600 transition-colors">
               💚 {t.safeNow} — {DISTRICT_NAMES[selectedDistrict]?.[lang] || selectedDistrict}
@@ -576,7 +684,6 @@ export default function App() {
               </div>
             </div>
             <div className="overflow-y-auto max-h-[55vh] p-3 space-y-2">
-              {/* ═══ PHASE 7: Community Feed Tab ═══ */}
               {feedFilter === 'community' ? (
                 safeCheckIns.length > 0 ? (
                   safeCheckIns.slice(0, 30).map(ci => {
