@@ -1,4 +1,4 @@
-// constants.ts — Guardian Lebanon — Phase 13: Offline Resilience & Mesh-Sync
+// constants.ts — Guardian Lebanon — Phase 14: Emergency Resource Routing
 // All static data, category arrays, translations, map config
 
 export type Language = 'en' | 'ar' | 'fr';
@@ -14,6 +14,14 @@ export const MAP_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/
 export const MAP_TILE_URL_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 export const MAP_TILE_URL_LIGHT = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const LEBANON_BOUNDS: [[number, number], [number, number]] = [[32.8, 34.8], [34.8, 36.7]];
+
+// Phase 14: Routing Modes
+export const ROUTING_MODES = {
+  walking:       { id: 'walking',       osrmProfile: 'foot',    speedKmh: 5,  icon: '🚶', en: 'Walking',        ar: 'مشي',           fr: 'Marche' },
+  driving:       { id: 'driving',       osrmProfile: 'driving', speedKmh: 40, icon: '🚗', en: 'Driving',        ar: 'قيادة',          fr: 'Conduite' },
+  lowVisibility: { id: 'lowVisibility', osrmProfile: 'foot',    speedKmh: 3,  icon: '🌙', en: 'Low Visibility', ar: 'رؤية منخفضة', fr: 'Faible visibilité' },
+} as const;
+export type RoutingModeId = keyof typeof ROUTING_MODES;
 
 // ─── Marker Type ─────────────────────────────────────────────────────────────
 export interface MarkerPoint {
@@ -372,6 +380,16 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     meshSync: 'Mesh Sync',
     outboxPending: 'pending in outbox',
     outboxSynced: '✅ Outbox synced',
+    // ── Phase 14: Resource Routing ────────────
+    findSafestPath: 'Find Safest Path',
+    routeSafe: '✅ SAFE Route',
+    routeCaution: '⚠️ CAUTION',
+    routeUnsafe: '🚨 UNSAFE — Danger zone nearby',
+    estimatedTime: 'Est. Time',
+    safeZonesCrossed: 'Safe Zones',
+    dangerSegments: 'Danger Segments',
+    clearRoute: 'Clear Route',
+    routingToResource: 'Routing to resource...',
   },
   ar: {
     appName: 'GUARDIAN',
@@ -468,6 +486,15 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     meshSync: 'مزامنة شبكية',
     outboxPending: 'في انتظار الإرسال',
     outboxSynced: '✅ تمت المزامنة',
+    findSafestPath: 'ابحث عن أسلم طريق',
+    routeSafe: '✅ مسار آمن',
+    routeCaution: '⚠️ تحذير',
+    routeUnsafe: '🚨 غير آمن — منطقة خطر قريبة',
+    estimatedTime: 'الوقت المقدر',
+    safeZonesCrossed: 'مناطق آمنة',
+    dangerSegments: 'مقاطع خطيرة',
+    clearRoute: 'مسح المسار',
+    routingToResource: 'جارٍ تحديد المسار...',
   },
   fr: {
     appName: 'GUARDIAN',
@@ -564,5 +591,14 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     meshSync: 'Sync mesh',
     outboxPending: 'en attente',
     outboxSynced: '✅ Boîte synchro',
+    findSafestPath: 'Trouver le chemin sûr',
+    routeSafe: '✅ Route SÛre',
+    routeCaution: '⚠️ ATTENTION',
+    routeUnsafe: '🚨 DANGEREUX — Zone de danger proche',
+    estimatedTime: 'Temps est.',
+    safeZonesCrossed: 'Zones sûres',
+    dangerSegments: 'Segments dangereux',
+    clearRoute: 'Supprimer route',
+    routingToResource: 'Calcul du chemin...',
   },
 };

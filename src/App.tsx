@@ -1,4 +1,4 @@
-// App.tsx — Guardian Lebanon — Phase 13: Offline Resilience & Mesh-Sync
+// App.tsx — Guardian Lebanon — Phase 14: Emergency Resource Routing
 // GUARDIAN_DATA unified engine — lowBandwidthMode HARD-CODED false
 // Antigravity Editor approved
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -13,10 +13,10 @@ import {
   MAP_TILE_URL_DARK, MAP_TILE_URL_LIGHT,
   EMERGENCY_CONTACTS, FILTER_CATEGORIES,
   GUARDIAN_DATA, ALL_MARKERS, MARKER_COLORS, MARKER_EMOJI,
-  AIRSTRIKES, NGOS, ROAD_BLOCKS, SEISMIC_DATA,
-  MOCK_FAMILY, PRIVACY_POLICY,
+  AIRSTRIKES, NGOS, ROAD_BLOCKS, HOSPITALS, SEISMIC_DATA,
+  MOCK_FAMILY, PRIVACY_POLICY, ROUTING_MODES,
   getShelterStatus, DISPUTE_THRESHOLD, detectBrowserLanguage,
-  type Language, type Theme, type MarkerPoint, type FamilyMember,
+  type Language, type Theme, type MarkerPoint, type FamilyMember, type RoutingModeId,
 } from './constants';
 import { useSafetyData, type Alert } from './data/safetyData';
 
@@ -55,6 +55,8 @@ const SHELTER_ICONS: Record<string, L.DivIcon> = {};
 NGOS.forEach(ngo => { SHELTER_ICONS[ngo.id] = buildShelterIcon(ngo); });
 const AIRSTRIKE_IDS = new Set(AIRSTRIKES.map(a => a.id));
 const ROADBLOCK_IDS = new Set(ROAD_BLOCKS.map(r => r.id));
+const HOSPITAL_IDS = new Set(HOSPITALS.map(h => h.id));
+const NGO_IDS = new Set(NGOS.map(n => n.id));
 
 // ─── Phase 12: Family Member Icon — distinct purple marker with member emoji ─
 function buildFamilyIcon(member: FamilyMember): L.DivIcon {
@@ -166,6 +168,16 @@ export default function App() {
   const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ duration: number; dangerAvoided: number } | null>(null);
   const [isRouting, setIsRouting] = useState(false);
+  // Phase 14: Resource route (shelter/hospital direct routing)
+  const [resourceRoute, setResourceRoute] = useState<{
+    safeSegments: [number, number][];
+    cautionSegments: [number, number][];
+    targetName: string;
+    estMinutes: number;
+    safeZones: number;
+    dangerSegments: number;
+    status: 'safe' | 'caution' | 'unsafe';
+  } | null>(null);
   const [reportType, setReportType] = useState(0);
   const [reportDetails, setReportDetails] = useState('');
   const [feedFilter, setFeedFilter] = useState<'all' | 'airstrikes' | 'roads' | 'community'>('all');
@@ -340,6 +352,62 @@ export default function App() {
     setShowReport(false); setReportDetails(''); setToast(t.submitted);
   }, [reportType, reportDetails, userLocation, addAlert, t, lang]);
 
+  // Phase 14: Route to a specific shelter or hospital
+  const routeToResource = useCallback(async (target: MarkerPoint) => {
+    const origin = userLocation || LEBANON_CENTER;
+    setIsRouting(true);
+    setToast(t.routingToResource);
+    try {
+      const dangerZones = AIRSTRIKES.map(a => a.coordinates);
+      let coords: [number, number][] = [];
+      let duration = 0;
+      if (isOnline) {
+        const res = await fetch(`${OSRM_BASE_URL}/${origin[1]},${origin[0]};${target.coordinates[1]},${target.coordinates[0]}?overview=full&geometries=geojson`);
+        const data = await res.json();
+        if (data.routes?.[0]) {
+          coords = data.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]] as [number, number]);
+          duration = Math.round(data.routes[0].duration / 60);
+        }
+      }
+      // Offline fallback: straight-line interpolation
+      if (coords.length === 0) {
+        const steps = 20;
+        for (let i = 0; i <= steps; i++) {
+          const f = i / steps;
+          coords.push([
+            origin[0] + (target.coordinates[0] - origin[0]) * f,
+            origin[1] + (target.coordinates[1] - origin[1]) * f,
+          ]);
+        }
+        const dist = haversine(origin, target.coordinates);
+        duration = Math.round(dist / 1000 / (ROUTING_MODES.walking.speedKmh / 60));
+      }
+      // Phase 14: Classify each segment as safe or caution (500m airstrike buffer)
+      const safeSegs: [number, number][] = [];
+      const cautionSegs: [number, number][] = [];
+      let dangerCount = 0;
+      let safeZoneCount = 0;
+      let lastWasSafe = true;
+      for (const coord of coords) {
+        const nearDanger = dangerZones.some(dz => haversine(coord, dz) < SAFETY_BUFFER_METERS);
+        if (nearDanger) {
+          cautionSegs.push(coord);
+          if (lastWasSafe) { dangerCount++; lastWasSafe = false; }
+        } else {
+          safeSegs.push(coord);
+          if (!lastWasSafe) { safeZoneCount++; lastWasSafe = true; }
+        }
+      }
+      if (lastWasSafe) safeZoneCount++;
+      const status = dangerCount === 0 ? 'safe' : dangerCount <= 2 ? 'caution' : 'unsafe';
+      setResourceRoute({ safeSegments: safeSegs, cautionSegments: cautionSegs, targetName: target.name, estMinutes: duration, safeZones: safeZoneCount, dangerSegments: dangerCount, status });
+      setMapCenter(target.coordinates);
+      setMapZoom(12);
+      setToast(status === 'safe' ? t.routeSafe : status === 'caution' ? t.routeCaution : t.routeUnsafe);
+    } catch { setToast(t.routeError); }
+    setIsRouting(false);
+  }, [userLocation, isOnline, t]);
+
   const handleIAmSafe = useCallback(() => {
     // Phase 13: If offline, queue to outbox instead of dropping
     if (!isOnline) {
@@ -391,6 +459,9 @@ export default function App() {
           <button onClick={() => handleShelterReport(marker.id, cap, 'space')} className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200">👍 {t.stillSpace}</button>
           <button onClick={() => handleShelterReport(marker.id, cap, 'full')} className="flex-1 text-[9px] font-bold py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200">🚫 {t.almostFull}</button>
         </div>)}
+        {/* Phase 14: Route to this shelter */}
+        <button onClick={() => routeToResource(marker)} disabled={isRouting}
+          className="w-full mt-2 text-[9px] font-bold py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-40">🧭 {t.findSafestPath}</button>
       </div>
     );
   };
@@ -455,6 +526,10 @@ export default function App() {
                       {marker.hours && <span className="block text-gray-400">🕐 {marker.hours}</span>}
                       {marker.phone && <a href={`tel:${marker.phone}`} className="block mt-1 text-blue-500 font-bold">📞 {marker.phone}</a>}
                       {marker.verified && <span className="block mt-1 text-green-500">{t.verified} ({marker.verificationCount})</span>}
+                      {/* Phase 14: Route to hospital/shelter from generic popup */}
+                      {(HOSPITAL_IDS.has(marker.id) || NGO_IDS.has(marker.id)) && (
+                        <button onClick={() => routeToResource(marker)} disabled={isRouting}
+                          className="w-full mt-2 text-[9px] font-bold py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-40">🧭 {t.findSafestPath}</button>)}
                     </div>)}
               </Popup>
             </Marker>
@@ -471,6 +546,14 @@ export default function App() {
             </div></Popup></Marker>);
         })}
         {routeCoords && <Polyline positions={routeCoords} pathOptions={{ color: '#3B82F6', weight: 4, dashArray: '10 6', opacity: 0.9 }} />}
+
+        {/* Phase 14: Resource route polylines — safe (blue) + caution (orange dashed) */}
+        {resourceRoute && resourceRoute.safeSegments.length > 1 && (
+          <Polyline positions={resourceRoute.safeSegments} pathOptions={{ color: '#3B82F6', weight: 5, opacity: 0.95 }} />
+        )}
+        {resourceRoute && resourceRoute.cautionSegments.length > 1 && (
+          <Polyline positions={resourceRoute.cautionSegments} pathOptions={{ color: '#f97316', weight: 5, dashArray: '8 6', opacity: 0.9 }} />
+        )}
 
         {/* Phase 12: Family Member Markers — private layer */}
         {familyVisible && familyCircle.map(fm => (
@@ -555,6 +638,26 @@ export default function App() {
       </div>
 
       {toast && <div className="absolute top-[140px] left-1/2 -translate-x-1/2 z-[2000] bg-black/80 text-white text-sm px-4 py-2 rounded-xl backdrop-blur-md animate-pulse">{toast}</div>}
+
+      {/* Phase 14: Resource Route Info Bar */}
+      {resourceRoute && (
+        <div className={`absolute bottom-14 left-3 right-3 z-[1001] ${surface} rounded-2xl border ${border} p-3 shadow-2xl`}>
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="text-xs font-bold">
+              <span className={resourceRoute.status === 'safe' ? 'text-blue-400' : resourceRoute.status === 'caution' ? 'text-orange-400' : 'text-red-400'}>
+                {resourceRoute.status === 'safe' ? t.routeSafe : resourceRoute.status === 'caution' ? t.routeCaution : t.routeUnsafe}
+              </span>
+              <span className="opacity-60 ml-2">→ {resourceRoute.targetName}</span>
+            </h4>
+            <button onClick={() => setResourceRoute(null)} className="text-[10px] px-2 py-0.5 rounded bg-red-500/20 text-red-400 font-bold">{t.clearRoute} ✕</button>
+          </div>
+          <div className="flex gap-4 text-[10px]">
+            <span className="text-blue-400 font-bold">⏱ {t.estimatedTime}: {resourceRoute.estMinutes} {t.minutes}</span>
+            <span className="text-green-400">✅ {t.safeZonesCrossed}: {resourceRoute.safeZones}</span>
+            {resourceRoute.dangerSegments > 0 && <span className="text-orange-400">⚠️ {t.dangerSegments}: {resourceRoute.dangerSegments}</span>}
+          </div>
+        </div>
+      )}
 
       {showRouting && (<div className={`absolute bottom-14 left-3 right-3 z-[1001] ${surface} rounded-2xl border ${border} p-4 shadow-2xl`}>
         <div className="flex justify-between items-center mb-3"><h3 className="font-bold text-sm">🧭 {t.safestPath}</h3><button onClick={() => setShowRouting(false)} className="text-xs opacity-60">{t.close} ✕</button></div>
