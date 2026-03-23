@@ -66,9 +66,10 @@ interface TacticalMapProps {
   locations: any[];
   userLocation: { lat: number; lng: number };
   onLocationSelect: (location: any) => void;
+  blackout?: boolean;
 }
 
-export function TacticalMap({ locations, userLocation, onLocationSelect }: TacticalMapProps) {
+export function TacticalMap({ locations, userLocation, onLocationSelect, blackout = false }: TacticalMapProps) {
   const resources = useMemo(() => locations.filter((l) => l.type !== 'danger'), [locations]);
   const dangers = useMemo(() => locations.filter((l) => l.type === 'danger'), [locations]);
 

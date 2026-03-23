@@ -7,36 +7,28 @@
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;
 }
-
 .scrollbar-thin::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 10px;
 }
-
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: rgba(0, 209, 255, 0.3);
   border-radius: 10px;
 }
-
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 209, 255, 0.5);
 }
 
-/* Smooth animations */
+/* Animations */
 @keyframes pulse-glow {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
-
 .animate-pulse-glow {
   animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Leaflet Overrides for dark tactical theme */
+/* Leaflet Dark Popup Overrides */
 .leaflet-popup-content-wrapper {
   background: rgba(5, 7, 10, 0.95) !important;
   color: #F1F5F9 !important;
@@ -47,9 +39,47 @@
 .leaflet-popup-tip {
   background: rgba(5, 7, 10, 0.95) !important;
 }
-.leaflet-control-zoom {
-  display: none !important;
+.leaflet-control-zoom { display: none !important; }
+.leaflet-control-attribution { display: none !important; }
+
+/* ═══════════════════════════════════════════════════════════════
+   BLACKOUT MODE — Pure black for OLED / zero light emission
+   ═══════════════════════════════════════════════════════════════ */
+
+.blackout-mode {
+  background-color: #000000 !important;
 }
-.leaflet-control-attribution {
-  display: none !important;
+
+.blackout-mode .glass-panel,
+.blackout-mode .backdrop-blur-xl,
+.blackout-mode .backdrop-blur-2xl {
+  background: #000000 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-color: #333333 !important;
 }
+
+.blackout-mode .leaflet-popup-content-wrapper {
+  background: #000000 !important;
+  border: 1px solid #333333 !important;
+  box-shadow: none !important;
+}
+.blackout-mode .leaflet-popup-tip {
+  background: #000000 !important;
+}
+
+/* Blackout: lower map tile brightness */
+.blackout-mode .leaflet-tile-pane {
+  filter: brightness(0.4) !important;
+}
+
+/* Blackout: force border visibility */
+.blackout-mode [class*="border-white/10"],
+.blackout-mode [class*="border-white/20"] {
+  border-color: #333333 !important;
+}
+
+/* RTL Support */
+[dir="rtl"] .flex-row { flex-direction: row-reverse; }
+[dir="rtl"] .text-left { text-align: right; }
+[dir="rtl"] .text-right { text-align: left; }
