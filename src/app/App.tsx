@@ -9,7 +9,7 @@ import { BottomNavigation } from './components/bottom-navigation';
 import { GUARDIAN_DATA, MAP_DEFAULT_CENTER } from '../constants';
 
 // ═══════════════════════════════════════════════════════════════
-// DATA EXTRACTION — bulletproof Object.keys() approach
+// DATA EXTRACTION
 // ═══════════════════════════════════════════════════════════════
 
 function extractAllResources(): any[] {
@@ -47,23 +47,96 @@ function guessType(cat: string): 'hospital' | 'shelter' | 'danger' | 'safe-zone'
   return 'safe-zone';
 }
 
-// ── Haversine distance (km) ──
 function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) ** 2;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TRUST ENGINE — Time-weighted P2P verification
+// ═══════════════════════════════════════════════════════════════
+
+interface VoteReport {
+  locationId: string;
+  vote: 'up' | 'down';
+  timestamp: string;
+}
+
+function loadReports(): VoteReport[] {
+  try {
+    return JSON.parse(localStorage.getItem('guardian_reports') || '[]');
+  } catch { return []; }
+}
+
+function saveReports(reports: VoteReport[]) {
+  try { localStorage.setItem('guardian_reports', JSON.stringify(reports)); } catch {}
+}
+
+/**
+ * calculateTrustScore
+ * Formula: (WeightedUpvotes / WeightedTotalVotes) * 100
+ * Weights:
+ *   - Reports < 3 hours old → 2x weight
+ *   - Reports 3-12 hours old → 1x weight
+ *   - Reports > 12 hours old → 0 weight (ignored)
+ */
+function calculateTrustScore(locationId: string, reports: VoteReport[]): {
+  trustScore: number;
+  upvotes: number;
+  downvotes: number;
+  totalReports: number;
+  lastReported: string;
+} {
+  const now = Date.now();
+  const THREE_HOURS = 3 * 60 * 60 * 1000;
+  const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+
+  let weightedUp = 0;
+  let weightedTotal = 0;
+  let upvotes = 0;
+  let downvotes = 0;
+  let lastTs = '';
+
+  const locReports = reports.filter((r) => r.locationId === locationId);
+
+  for (const r of locReports) {
+    const age = now - new Date(r.timestamp).getTime();
+
+    // >12h → 0 weight (skip)
+    if (age > TWELVE_HOURS) continue;
+
+    // <3h → 2x weight, 3-12h → 1x weight
+    const weight = age < THREE_HOURS ? 2 : 1;
+
+    if (r.vote === 'up') {
+      weightedUp += weight;
+      upvotes++;
+    } else {
+      downvotes++;
+    }
+    weightedTotal += weight;
+
+    if (!lastTs || r.timestamp > lastTs) lastTs = r.timestamp;
+  }
+
+  const trustScore = weightedTotal > 0 ? Math.round((weightedUp / weightedTotal) * 100) : -1; // -1 = no data
+
+  const lastReported = lastTs
+    ? `${Math.round((now - new Date(lastTs).getTime()) / 60000)} min ago`
+    : '';
+
+  return { trustScore, upvotes, downvotes, totalReports: upvotes + downvotes, lastReported };
 }
 
 // ═══════════════════════════════════════════════════════════════
 
 const FAMILY_MEMBERS = [
-  { id: 'f1', name: 'Sarah Chen', avatar: 'S', batteryLevel: 85, lastSeen: '2 min ago', status: 'safe' as const, location: 'Home — 1.2 km away' },
+  { id: 'f1', name: 'Sarah Chen', avatar: 'S', batteryLevel: 85, lastSeen: '2 min ago', status: 'safe' as const, location: 'Home — 1.2 km' },
   { id: 'f2', name: 'Michael Johnson', avatar: 'M', batteryLevel: 45, lastSeen: '5 min ago', status: 'warning' as const, location: 'Downtown — 3.5 km' },
-  { id: 'f3', name: 'Emma Williams', avatar: 'E', batteryLevel: 92, lastSeen: '1 min ago', status: 'safe' as const, location: 'Central Park — 1.8 km' },
+  { id: 'f3', name: 'Emma Williams', avatar: 'E', batteryLevel: 92, lastSeen: '1 min ago', status: 'safe' as const, location: 'Park — 1.8 km' },
   { id: 'f4', name: 'David Martinez', avatar: 'D', batteryLevel: 15, lastSeen: '15 min ago', status: 'warning' as const, location: 'Harbor — 4.2 km' },
 ];
 
@@ -75,23 +148,35 @@ export default function App() {
   const [userLat, setUserLat] = useState(33.8938);
   const [userLng, setUserLng] = useState(35.5018);
   const [alertPulsing, setAlertPulsing] = useState(false);
+  const [reports, setReports] = useState<VoteReport[]>(loadReports());
 
-  // ── Extract all items from GUARDIAN_DATA ──
+  // ── Extract all items ──
   const allItems = useMemo(() => extractAllResources(), []);
 
+  // ── Build locations with trust scores from reports table ──
   const allLocations = useMemo(() => {
     return allItems.map((item) => {
       const cat = guessCategory(item);
       const type = guessType(cat);
+      const id = item.id || `item-${Math.random()}`;
+
+      // Calculate trust score from reports
+      const trust = calculateTrustScore(id, reports);
+      const baseSafety = item.verificationCount ? Math.min(99, 60 + item.verificationCount * 3) : 80;
+
       return {
-        id: item.id || `item-${Math.random()}`,
+        id,
         name: item.name || item.description || 'Unknown',
         type,
         category: cat,
         lat: item.lat ?? item.latitude ?? 33.89,
         lng: item.lng ?? item.longitude ?? 35.50,
-        safetyScore: item.verificationCount ? Math.min(99, 60 + item.verificationCount * 3) : 80,
+        safetyScore: baseSafety,
+        trustScore: trust.trustScore >= 0 ? trust.trustScore : baseSafety,
         verifiedBy: item.verificationCount || 0,
+        upvotes: trust.upvotes,
+        downvotes: trust.downvotes,
+        lastReported: trust.lastReported,
         status: (item.isOperational !== false ? 'open' : 'closed') as 'open' | 'closed',
         distance: item.radiusKm ? `${item.radiusKm} km radius` : '',
         eta: '',
@@ -102,9 +187,8 @@ export default function App() {
         radiusKm: item.radiusKm,
       };
     });
-  }, [allItems]);
+  }, [allItems, reports]);
 
-  // ── Danger zones sorted by proximity to user ──
   const dangersSorted = useMemo(() => {
     return allLocations
       .filter((l) => l.type === 'danger')
@@ -114,32 +198,25 @@ export default function App() {
 
   const dangerCount = dangersSorted.length;
 
-  // ═══════════════════════════════════════════════════════════
-  // DANGER PROXIMITY: if user is within 5km of any danger zone
-  // → haptic vibrate + pulse the Alerts badge
-  // ═══════════════════════════════════════════════════════════
+  // ── Geolocation ──
   useEffect(() => {
-    // Get live user location
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => { setUserLat(pos.coords.latitude); setUserLng(pos.coords.longitude); },
-        () => {},
-        { enableHighAccuracy: false, timeout: 10000 }
+        () => {}, { enableHighAccuracy: false, timeout: 10000 }
       );
     }
   }, []);
 
+  // ── Danger proximity (5km) ──
   useEffect(() => {
     const nearby = dangersSorted.some((d) => d.dist <= 5);
     if (nearby && !alertPulsing) {
       setAlertPulsing(true);
       try { navigator.vibrate([300, 200, 300]); } catch {}
-    } else if (!nearby && alertPulsing) {
-      setAlertPulsing(false);
-    }
+    } else if (!nearby) setAlertPulsing(false);
   }, [dangersSorted, alertPulsing]);
 
-  // ── Map center ──
   const center = useMemo(() => {
     try {
       if (Array.isArray(MAP_DEFAULT_CENTER)) return { lat: MAP_DEFAULT_CENTER[0], lng: MAP_DEFAULT_CENTER[1] };
@@ -147,163 +224,97 @@ export default function App() {
     return { lat: 33.8938, lng: 35.5018 };
   }, []);
 
-  // ── SOS ──
-  const handleSOSPress = useCallback(() => {
-    // FloatingHeader handles geolocation + POST + tel:125 internally
-    // We broadcast to family circle here
-    try {
-      const ts = new Date().toISOString();
-      localStorage.setItem('guardian_last_sos', ts);
-    } catch {}
+  // ═══ VOTE HANDLER — persist to reports table ═══
+  const handleVote = useCallback((locationId: string, vote: 'up' | 'down') => {
+    const report: VoteReport = { locationId, vote, timestamp: new Date().toISOString() };
+    setReports((prev) => {
+      const updated = [report, ...prev];
+      saveReports(updated);
+      return updated;
+    });
   }, []);
 
-  // ── Safe Check-in ──
+  const handleSOSPress = useCallback(() => {
+    try { localStorage.setItem('guardian_last_sos', new Date().toISOString()); } catch {}
+  }, []);
+
   const addSafeCheckIn = useCallback(() => {
     const ts = new Date().toISOString();
     try {
       const existing = JSON.parse(localStorage.getItem('guardian_safe_checkins') || '[]');
       existing.unshift(ts);
       localStorage.setItem('guardian_safe_checkins', JSON.stringify(existing.slice(0, 50)));
-      // Update family_members table (localStorage simulation)
       localStorage.setItem('guardian_family_last_safe', ts);
     } catch {}
     setShowFamilyCircle(true);
   }, []);
 
-  // ── Route ──
   const handleStartRoute = useCallback((location: any) => {
     const d = distanceKm(userLat, userLng, location.lat, location.lng);
-    alert(`🧭 Route to ${location.name}\n\nSafety: ${location.safetyScore}%\nDistance: ${d.toFixed(1)} km\nVerified by: ${location.verifiedBy} users`);
+    alert(`🧭 Route to ${location.name}\n\nTrust: ${location.trustScore}%\nDistance: ${d.toFixed(1)} km`);
     setSelectedLocation(null);
   }, [userLat, userLng]);
 
-  // ── Tab handler ──
   const handleTabChange = useCallback((tab: 'map' | 'alerts' | 'safe' | 'settings') => {
     setActiveTab(tab);
     if (tab === 'map') { setSelectedLocation(null); setShowFamilyCircle(false); setShowAlertsDrawer(false); }
     else if (tab === 'safe') { addSafeCheckIn(); }
     else if (tab === 'alerts') { setShowAlertsDrawer(true); }
-    else if (tab === 'settings') {
-      alert('⚙️ Settings\n\n• Emergency contacts\n• Language (EN / AR / FR)\n• Light / Dark mode');
-    }
+    else if (tab === 'settings') { alert('⚙️ Settings\n\n• Emergency contacts\n• Language (EN / AR / FR)\n• Light / Dark mode'); }
   }, [addSafeCheckIn]);
 
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ backgroundColor: '#05070A' }}>
-      {/* 1. MAP */}
-      <TacticalMap
-        locations={allLocations}
-        userLocation={center}
-        onLocationSelect={setSelectedLocation}
-      />
-
-      {/* 2. HEADER */}
+      <TacticalMap locations={allLocations} userLocation={center} onLocationSelect={setSelectedLocation} />
       <FloatingHeader batterySaver={true} batteryLevel={73} onSOSPress={handleSOSPress} />
 
-      {/* 3. HOSPITAL SHEET */}
+      {/* HospitalSheet with P2P voting */}
       <HospitalSheet
         location={selectedLocation}
         onClose={() => setSelectedLocation(null)}
         onStartRoute={handleStartRoute}
+        onVote={handleVote}
       />
 
-      {/* 4. FAMILY CIRCLE */}
-      <FamilySafetyCircle
-        isOpen={showFamilyCircle}
-        onClose={() => setShowFamilyCircle(false)}
-        members={FAMILY_MEMBERS}
-      />
+      <FamilySafetyCircle isOpen={showFamilyCircle} onClose={() => setShowFamilyCircle(false)} members={FAMILY_MEMBERS} />
+      <BottomNavigation activeTab={activeTab} onTabChange={handleTabChange} alertCount={dangerCount} alertPulsing={alertPulsing} />
 
-      {/* 5. BOTTOM NAV */}
-      <BottomNavigation
-        activeTab={activeTab}
-        onTabChange={handleTabChange}
-        alertCount={dangerCount}
-        alertPulsing={alertPulsing}
-      />
-
-      {/* ═══ 6. VAUL ALERTS DRAWER ═══ */}
+      {/* Vaul Alerts Drawer */}
       <Drawer.Root open={showAlertsDrawer} onOpenChange={setShowAlertsDrawer}>
         <Drawer.Portal>
           <Drawer.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40" />
           <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto focus:outline-none">
             <div className="backdrop-blur-2xl bg-[#05070A]/95 border-t border-white/10 rounded-t-3xl shadow-2xl">
-              {/* Drag handle */}
-              <div className="flex justify-center pt-3 pb-2">
-                <div className="w-12 h-1.5 rounded-full bg-white/20" />
-              </div>
-
+              <div className="flex justify-center pt-3 pb-2"><div className="w-12 h-1.5 rounded-full bg-white/20" /></div>
               <div className="px-6 pb-8 max-h-[70vh] overflow-y-auto scrollbar-thin">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <Drawer.Title className="text-white text-xl" style={{ fontWeight: 700 }}>
-                      ⚠️ Active Alerts
-                    </Drawer.Title>
-                    <p className="text-white/60 text-sm mt-1">
-                      {dangerCount} danger zones — sorted by proximity
-                    </p>
-                  </div>
-                </div>
-
-                {/* Danger Zone List */}
+                <Drawer.Title className="text-white text-xl mb-1" style={{ fontWeight: 700 }}>⚠️ Active Alerts</Drawer.Title>
+                <p className="text-white/60 text-sm mb-4">{dangerCount} zones — sorted by proximity</p>
                 <div className="space-y-3">
-                  {dangersSorted.map((dz, i) => {
+                  {dangersSorted.map((dz) => {
                     const isNear = dz.dist <= 5;
                     return (
-                      <button
-                        key={dz.id}
-                        onClick={() => { setSelectedLocation(dz); setShowAlertsDrawer(false); }}
-                        className="w-full text-left backdrop-blur-xl bg-white/5 border rounded-2xl p-4 
-                                 hover:bg-white/10 transition-all"
-                        style={{ borderColor: isNear ? '#FF3B3B40' : 'rgba(255,255,255,0.1)' }}
-                      >
+                      <button key={dz.id} onClick={() => { setSelectedLocation(dz); setShowAlertsDrawer(false); }}
+                        className="w-full text-left backdrop-blur-xl bg-white/5 border rounded-2xl p-4 hover:bg-white/10 transition-all"
+                        style={{ borderColor: isNear ? '#FF3B3B40' : 'rgba(255,255,255,0.1)' }}>
                         <div className="flex items-start gap-3">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center 
-                                        border-2 flex-shrink-0 ${isNear ? 'animate-pulse' : ''}`}
-                               style={{
-                                 backgroundColor: '#FF3B3B20',
-                                 borderColor: '#FF3B3B',
-                                 boxShadow: isNear ? '0 0 20px #FF3B3B60' : 'none',
-                               }}>
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 flex-shrink-0 ${isNear ? 'animate-pulse' : ''}`}
+                               style={{ backgroundColor: '#FF3B3B20', borderColor: '#FF3B3B', boxShadow: isNear ? '0 0 20px #FF3B3B60' : 'none' }}>
                             <AlertTriangle className="w-5 h-5 text-[#FF3B3B]" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-white text-sm" style={{ fontWeight: 600 }}>
-                                {dz.name}
-                              </span>
-                              {isNear && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FF3B3B]/20 text-[#FF3B3B] border border-[#FF3B3B]/40"
-                                      style={{ fontWeight: 700 }}>
-                                  NEARBY
-                                </span>
-                              )}
+                              <span className="text-white text-sm" style={{ fontWeight: 600 }}>{dz.name}</span>
+                              {isNear && <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FF3B3B]/20 text-[#FF3B3B] border border-[#FF3B3B]/40" style={{ fontWeight: 700 }}>NEARBY</span>}
                             </div>
                             <div className="flex items-center gap-3 text-xs text-white/50">
-                              <div className="flex items-center gap-1">
-                                <Navigation className="w-3 h-3" />
-                                <span>{dz.dist.toFixed(1)} km away</span>
-                              </div>
-                              {dz.severity && (
-                                <span className="uppercase">{dz.severity}</span>
-                              )}
-                              {dz.radiusKm && (
-                                <span>{dz.radiusKm} km radius</span>
-                              )}
+                              <span className="flex items-center gap-1"><Navigation className="w-3 h-3" />{dz.dist.toFixed(1)} km</span>
+                              {dz.severity && <span className="uppercase">{dz.severity}</span>}
                             </div>
                           </div>
                         </div>
                       </button>
                     );
                   })}
-
-                  {dangersSorted.length === 0 && (
-                    <div className="text-center py-8">
-                      <div className="text-2xl mb-2">✅</div>
-                      <p className="text-white/60">No active danger zones nearby</p>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
