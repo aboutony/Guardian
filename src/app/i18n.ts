@@ -1,29 +1,24 @@
 // ═══════════════════════════════════════════════════════════════
-// GUARDIAN i18n — English + Arabic with RTL Support
+// GUARDIAN i18n — Full Tactical Arabic Sync
+// BRAND LOCK: "GUARDIAN" is NEVER translated.
 // ═══════════════════════════════════════════════════════════════
 
 export type Lang = 'en' | 'ar';
 
 export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
   en: {
-    // App
-    app_name: 'GUARDIAN',
-    connected: 'Connected to Emergency Network',
-    offline: '📡 Offline Mode Active',
-
-    // Navigation
+    // ── Navigation ──
     tab_map: 'Map',
     tab_alerts: 'Alerts',
     tab_safe: 'I AM SAFE',
     tab_settings: 'Settings',
     safe_confirmed: 'SAFE ✓',
 
-    // Header
+    // ── Header ──
     sos: 'SOS',
     sos_sending: 'SENDING...',
-    blackout: 'BLACKOUT',
 
-    // Categories
+    // ── Categories ──
     hospital: 'Hospital',
     bakery: 'Bakery',
     pharmacy: 'Pharmacy',
@@ -32,33 +27,39 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     water_point: 'Water Point',
     fuel_station: 'Fuel Station',
     danger: 'Danger Zone',
+    airstrike: 'Airstrike',
+    roadblock: 'Roadblock',
 
-    // HospitalSheet
+    // ── HospitalSheet ──
     trust_score: 'Trust Score',
     reports: 'reports',
     confirmed: 'confirmed',
     operational_q: 'Is this location operational?',
     vote_operational: '✅ OPERATIONAL',
     vote_out: '❌ OUT OF SERVICE',
-    vote_thanks: 'Thank you for your report. Trust score will update shortly.',
+    vote_thanks: 'Thank you for your report.',
     verified: 'VERIFIED',
     distance: 'Distance',
     eta: 'ETA',
     services: 'Available Services',
     call: 'Call',
     start_route: 'Start Safest Route',
+    status_open: 'Open',
+    status_closed: 'Closed',
+    status_limited: 'Limited',
 
-    // Alerts
+    // ── Alerts ──
     active_alerts: '⚠️ Active Alerts',
     danger_zones_sorted: 'danger zones — sorted by proximity',
     nearby: 'NEARBY',
     km_away: 'km away',
+    danger_zone: 'DANGER ZONE',
 
-    // Counter
+    // ── Counter ──
     resources: 'Resources',
     danger_zones: 'Danger Zones',
 
-    // Settings
+    // ── Settings ──
     settings_title: 'Settings',
     language: 'Language',
     blackout_mode: 'Blackout Mode',
@@ -68,31 +69,37 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     about: 'About Guardian',
     version: 'Version',
 
-    // Family
+    // ── Family ──
     family_circle: 'Family Safety Circle',
     message: 'Message',
     track: 'Track',
+    min_ago: 'min ago',
+    battery: 'Battery',
+
+    // ── Network ──
+    connected: 'Connected to Emergency Network',
+    offline: '📡 Offline Mode Active',
+
+    // ── General ──
+    close: 'Close',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+    your_location: 'Your Location',
   },
 
   ar: {
-    // App
-    app_name: 'الحارس',
-    connected: 'متصل بشبكة الطوارئ',
-    offline: '📡 وضع عدم الاتصال',
-
-    // Navigation
+    // ── التنقل ──
     tab_map: 'الخريطة',
     tab_alerts: 'التنبيهات',
-    tab_safe: 'أنا بأمان',
+    tab_safe: 'أنا بخير',
     tab_settings: 'الإعدادات',
     safe_confirmed: 'بأمان ✓',
 
-    // Header
-    sos: 'نجدة',
+    // ── الشريط العلوي ──
+    sos: 'استغاثة',
     sos_sending: 'جاري الإرسال...',
-    blackout: 'وضع التعتيم',
 
-    // Categories
+    // ── التصنيفات ──
     hospital: 'مستشفى',
     bakery: 'مخبز',
     pharmacy: 'صيدلية',
@@ -101,60 +108,78 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     water_point: 'نقطة مياه',
     fuel_station: 'محطة وقود',
     danger: 'منطقة خطرة',
+    airstrike: 'غارة جوية',
+    roadblock: 'حاجز طريق',
 
-    // HospitalSheet
-    trust_score: 'نسبة الثقة',
+    // ── بطاقة الموقع ──
+    trust_score: 'مؤشر الثقة',
     reports: 'تقارير',
     confirmed: 'تأكيدات',
-    operational_q: 'هل هذا الموقع يعمل؟',
+    operational_q: 'هل هذا الموقع يعمل حالياً؟',
     vote_operational: '✅ يعمل',
     vote_out: '❌ خارج الخدمة',
-    vote_thanks: 'شكراً لتقريرك. سيتم تحديث نسبة الثقة قريباً.',
+    vote_thanks: 'شكراً لتقريرك.',
     verified: 'موثّق',
     distance: 'المسافة',
     eta: 'الوقت المتوقع',
     services: 'الخدمات المتاحة',
     call: 'اتصال',
-    start_route: 'ابدأ الطريق الأكثر أماناً',
+    start_route: 'ابدأ أأمن مسار',
+    status_open: 'مفتوح',
+    status_closed: 'مغلق',
+    status_limited: 'محدود',
 
-    // Alerts
+    // ── التنبيهات ──
     active_alerts: '⚠️ تنبيهات نشطة',
     danger_zones_sorted: 'مناطق خطرة — مرتبة حسب القرب',
     nearby: 'قريب',
     km_away: 'كم',
+    danger_zone: 'منطقة خطرة',
 
-    // Counter
+    // ── العدّاد ──
     resources: 'موارد',
     danger_zones: 'مناطق خطرة',
 
-    // Settings
+    // ── الإعدادات ──
     settings_title: 'الإعدادات',
     language: 'اللغة',
     blackout_mode: 'وضع التعتيم',
-    blackout_desc: 'أسود خالص لشاشات OLED — صفر إضاءة',
+    blackout_desc: 'أسود خالص — صفر إضاءة',
     emergency_contacts: 'جهات الطوارئ',
-    privacy: 'الخصوصية والمشاركة',
-    about: 'عن الحارس',
+    privacy: 'الخصوصية',
+    about: 'عن Guardian',
     version: 'الإصدار',
 
-    // Family
-    family_circle: 'دائرة أمان العائلة',
+    // ── الدائرة المقربة ──
+    family_circle: 'الدائرة المقربة',
     message: 'رسالة',
     track: 'تتبع',
+    min_ago: 'دقيقة',
+    battery: 'البطارية',
+
+    // ── الشبكة ──
+    connected: 'متصل بشبكة الطوارئ',
+    offline: '📡 وضع عدم الاتصال',
+
+    // ── عام ──
+    close: 'إغلاق',
+    cancel: 'إلغاء',
+    confirm: 'تأكيد',
+    your_location: 'موقعك',
   },
 };
 
-/**
- * Get a translation string by key
- */
 export function t(lang: Lang, key: string): string {
   return TRANSLATIONS[lang]?.[key] || TRANSLATIONS.en[key] || key;
 }
 
-/**
- * Apply RTL to document body if Arabic
- */
 export function applyDirection(lang: Lang) {
   document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
   document.documentElement.lang = lang;
+  // Apply Cairo font for Arabic legibility
+  if (lang === 'ar') {
+    document.body.style.fontFamily = "'Cairo', 'Inter', sans-serif";
+  } else {
+    document.body.style.fontFamily = "'Inter', sans-serif";
+  }
 }

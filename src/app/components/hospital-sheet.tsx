@@ -1,24 +1,15 @@
 import React, { useState } from 'react';
 import { ChevronDown, Navigation, Phone, Clock, CheckCircle, Users, ThumbsUp, ThumbsDown, ShieldCheck } from 'lucide-react';
+import { type Lang, t } from '../i18n';
 
 interface Location {
-  id: string;
-  name: string;
+  id: string; name: string;
   type: 'hospital' | 'shelter' | 'police' | 'danger' | 'safe-zone';
-  lat: number;
-  lng: number;
-  safetyScore?: number;
-  verifiedBy?: number;
+  lat: number; lng: number;
+  safetyScore?: number; verifiedBy?: number;
   status?: 'open' | 'closed' | 'limited';
-  distance?: string;
-  eta?: string;
-  address?: string;
-  phone?: string;
-  services?: string[];
-  trustScore?: number;
-  upvotes?: number;
-  downvotes?: number;
-  lastReported?: string;
+  distance?: string; eta?: string; address?: string; phone?: string; services?: string[];
+  trustScore?: number; upvotes?: number; downvotes?: number; lastReported?: string;
 }
 
 interface HospitalSheetProps {
@@ -26,9 +17,11 @@ interface HospitalSheetProps {
   onClose: () => void;
   onStartRoute: (location: Location) => void;
   onVote?: (locationId: string, vote: 'up' | 'down') => void;
+  lang?: Lang;
+  blackout?: boolean;
 }
 
-export function HospitalSheet({ location, onClose, onStartRoute, onVote }: HospitalSheetProps) {
+export function HospitalSheet({ location, onClose, onStartRoute, onVote, lang = 'en', blackout = false }: HospitalSheetProps) {
   const [dragStart, setDragStart] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState(0);
   const [voted, setVoted] = useState<'up' | 'down' | null>(null);
@@ -43,8 +36,7 @@ export function HospitalSheet({ location, onClose, onStartRoute, onVote }: Hospi
   };
   const handleTouchEnd = () => {
     if (dragOffset > 100) onClose();
-    setDragStart(null);
-    setDragOffset(0);
+    setDragStart(null); setDragOffset(0);
   };
 
   const getSafetyColor = (score: number) => {
@@ -59,38 +51,23 @@ export function HospitalSheet({ location, onClose, onStartRoute, onVote }: Hospi
   const downvotes = location.downvotes ?? 0;
   const totalVotes = upvotes + downvotes;
 
-  // ── Vote handler ──
   const handleVote = (vote: 'up' | 'down') => {
     setVoted(vote);
     if (onVote) onVote(location.id, vote);
-    // Haptic
     try { navigator.vibrate(50); } catch {}
   };
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm"
-        onClick={onClose}
-        style={{ opacity: dragOffset > 0 ? 1 - dragOffset / 200 : 1 }}
-      />
+      <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={onClose}
+           style={{ opacity: dragOffset > 0 ? 1 - dragOffset / 200 : 1 }} />
 
-      {/* Bottom Sheet */}
-      <div
-        className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto"
-        style={{
-          transform: `translateY(${dragOffset}px)`,
-          transition: dragStart === null ? 'transform 0.3s ease-out' : 'none',
-        }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        <div className="backdrop-blur-2xl bg-[#05070A]/95 border-t border-white/10 rounded-t-3xl shadow-2xl">
-          {/* Drag Handle */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto"
+        style={{ transform: `translateY(${dragOffset}px)`, transition: dragStart === null ? 'transform 0.3s ease-out' : 'none' }}
+        onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+        <div className={`rounded-t-3xl shadow-2xl ${blackout ? 'bg-black border-t border-[#333]' : 'backdrop-blur-2xl bg-[#05070A]/95 border-t border-white/10'}`}>
           <div className="flex justify-center pt-3 pb-2">
-            <div className="w-12 h-1.5 rounded-full bg-white/20" />
+            <div className={`w-12 h-1.5 rounded-full ${blackout ? 'bg-[#333]' : 'bg-white/20'}`} />
           </div>
 
           <div className="px-6 pb-8">
@@ -99,10 +76,10 @@ export function HospitalSheet({ location, onClose, onStartRoute, onVote }: Hospi
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   {location.status === 'open' && <CheckCircle className="w-4 h-4 text-[#00FF95]" />}
-                  <span className="text-xs text-white/60 uppercase tracking-wide">{location.type}</span>
+                  <span className="text-xs text-white/60 uppercase tracking-wide">{t(lang, location.type)}</span>
                   {trustScore >= 80 && totalVotes >= 5 && (
                     <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#00FF95]/20 text-[#00FF95] border border-[#00FF95]/40">
-                      <ShieldCheck className="w-3 h-3" /> VERIFIED
+                      <ShieldCheck className="w-3 h-3" /> {t(lang, 'verified')}
                     </span>
                   )}
                 </div>
@@ -116,121 +93,80 @@ export function HospitalSheet({ location, onClose, onStartRoute, onVote }: Hospi
 
             {/* Trust Score */}
             <div className="mb-5">
-              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-4">
+              <div className={`rounded-2xl p-4 ${blackout ? 'bg-[#111] border border-[#333]' : 'backdrop-blur-xl bg-white/5 border border-white/10'}`}>
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-white/80 text-sm">Trust Score</span>
+                  <span className="text-white/80 text-sm">{t(lang, 'trust_score')}</span>
                   <div className="flex items-center gap-2">
                     <Users className="w-4 h-4 text-white/60" />
                     <span className="text-xs text-white/60">
-                      {totalVotes} reports · {upvotes} confirmed
+                      {totalVotes} {t(lang, 'reports')} · {upvotes} {t(lang, 'confirmed')}
                     </span>
                   </div>
                 </div>
-                
-                {/* Progress bar */}
                 <div className="relative h-3 bg-white/5 rounded-full overflow-hidden mb-2">
-                  <div
-                    className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
-                    style={{
-                      width: `${trustScore}%`,
-                      backgroundColor: getSafetyColor(trustScore),
-                      boxShadow: `0 0 20px ${getSafetyColor(trustScore)}60`,
-                    }}
-                  />
+                  <div className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                    style={{ width: `${trustScore}%`, backgroundColor: getSafetyColor(trustScore), boxShadow: `0 0 20px ${getSafetyColor(trustScore)}60` }} />
                 </div>
-
                 <div className="flex items-center justify-between">
-                  <span
-                    className="tracking-wider"
-                    style={{ fontSize: '28px', fontWeight: 700, color: getSafetyColor(trustScore) }}
-                  >
-                    {trustScore}%
-                  </span>
-                  <span className="text-xs text-white/60">
-                    {location.lastReported || 'Updated recently'}
-                  </span>
+                  <span style={{ fontSize: '28px', fontWeight: 700, color: getSafetyColor(trustScore) }}>{trustScore}%</span>
+                  <span className="text-xs text-white/60">{location.lastReported || ''}</span>
                 </div>
               </div>
             </div>
 
-            {/* ═══ P2P VOTING BUTTONS ═══ */}
+            {/* ═══ P2P VOTING — translated ═══ */}
             <div className="mb-5">
-              <p className="text-white/60 text-sm mb-3">Is this location operational?</p>
+              <p className="text-white/60 text-sm mb-3">{t(lang, 'operational_q')}</p>
               <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => handleVote('up')}
-                  disabled={voted !== null}
-                  className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 
-                           transition-all active:scale-95 ${
-                    voted === 'up'
-                      ? 'bg-[#00FF95]/20 border-[#00FF95] shadow-[0_0_20px_rgba(0,255,149,0.4)]'
-                      : voted === 'down'
-                        ? 'bg-white/5 border-white/10 opacity-50'
-                        : 'bg-white/5 border-white/10 hover:bg-[#00FF95]/10 hover:border-[#00FF95]/50'
-                  }`}
-                >
+                <button onClick={() => handleVote('up')} disabled={voted !== null}
+                  className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 transition-all active:scale-95 ${
+                    voted === 'up' ? 'bg-[#00FF95]/20 border-[#00FF95] shadow-[0_0_20px_rgba(0,255,149,0.4)]'
+                    : voted === 'down' ? 'bg-white/5 border-white/10 opacity-50'
+                    : 'bg-white/5 border-white/10 hover:bg-[#00FF95]/10 hover:border-[#00FF95]/50'}`}>
                   <ThumbsUp className="w-5 h-5" style={{ color: voted === 'up' ? '#00FF95' : '#fff' }} />
-                  <span style={{ fontWeight: 600, color: voted === 'up' ? '#00FF95' : '#fff', fontSize: '13px' }}>
-                    ✅ OPERATIONAL
+                  <span style={{ fontWeight: 600, color: voted === 'up' ? '#00FF95' : '#fff', fontSize: '12px' }}>
+                    {t(lang, 'vote_operational')}
                   </span>
                 </button>
-                <button
-                  onClick={() => handleVote('down')}
-                  disabled={voted !== null}
-                  className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 
-                           transition-all active:scale-95 ${
-                    voted === 'down'
-                      ? 'bg-[#FF3B3B]/20 border-[#FF3B3B] shadow-[0_0_20px_rgba(255,59,59,0.4)]'
-                      : voted === 'up'
-                        ? 'bg-white/5 border-white/10 opacity-50'
-                        : 'bg-white/5 border-white/10 hover:bg-[#FF3B3B]/10 hover:border-[#FF3B3B]/50'
-                  }`}
-                >
+                <button onClick={() => handleVote('down')} disabled={voted !== null}
+                  className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 transition-all active:scale-95 ${
+                    voted === 'down' ? 'bg-[#FF3B3B]/20 border-[#FF3B3B] shadow-[0_0_20px_rgba(255,59,59,0.4)]'
+                    : voted === 'up' ? 'bg-white/5 border-white/10 opacity-50'
+                    : 'bg-white/5 border-white/10 hover:bg-[#FF3B3B]/10 hover:border-[#FF3B3B]/50'}`}>
                   <ThumbsDown className="w-5 h-5" style={{ color: voted === 'down' ? '#FF3B3B' : '#fff' }} />
-                  <span style={{ fontWeight: 600, color: voted === 'down' ? '#FF3B3B' : '#fff', fontSize: '13px' }}>
-                    ❌ OUT OF SERVICE
+                  <span style={{ fontWeight: 600, color: voted === 'down' ? '#FF3B3B' : '#fff', fontSize: '12px' }}>
+                    {t(lang, 'vote_out')}
                   </span>
                 </button>
               </div>
-              {voted && (
-                <p className="text-center text-xs text-white/40 mt-2">
-                  Thank you for your report. Trust score will update shortly.
-                </p>
-              )}
+              {voted && <p className="text-center text-xs text-white/40 mt-2">{t(lang, 'vote_thanks')}</p>}
             </div>
 
             {/* Quick Info */}
             <div className="grid grid-cols-2 gap-3 mb-5">
-              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-3">
+              <div className={`rounded-xl p-3 ${blackout ? 'bg-[#111] border border-[#333]' : 'backdrop-blur-xl bg-white/5 border border-white/10'}`}>
                 <div className="flex items-center gap-2 mb-1">
                   <Navigation className="w-4 h-4 text-[#00D1FF]" />
-                  <span className="text-xs text-white/60">Distance</span>
+                  <span className="text-xs text-white/60">{t(lang, 'distance')}</span>
                 </div>
-                <p className="text-white" style={{ fontSize: '18px', fontWeight: 600 }}>
-                  {location.distance || '—'}
-                </p>
+                <p className="text-white" style={{ fontSize: '18px', fontWeight: 600 }}>{location.distance || '—'}</p>
               </div>
-              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl p-3">
+              <div className={`rounded-xl p-3 ${blackout ? 'bg-[#111] border border-[#333]' : 'backdrop-blur-xl bg-white/5 border border-white/10'}`}>
                 <div className="flex items-center gap-2 mb-1">
                   <Clock className="w-4 h-4 text-[#00D1FF]" />
-                  <span className="text-xs text-white/60">ETA</span>
+                  <span className="text-xs text-white/60">{t(lang, 'eta')}</span>
                 </div>
-                <p className="text-white" style={{ fontSize: '18px', fontWeight: 600 }}>
-                  {location.eta || '—'}
-                </p>
+                <p className="text-white" style={{ fontSize: '18px', fontWeight: 600 }}>{location.eta || '—'}</p>
               </div>
             </div>
 
             {/* Services */}
             {location.services && location.services.length > 0 && (
               <div className="mb-5">
-                <p className="text-white/60 text-sm mb-3">Available Services</p>
+                <p className="text-white/60 text-sm mb-3">{t(lang, 'services')}</p>
                 <div className="flex flex-wrap gap-2">
                   {location.services.map((service, idx) => (
-                    <span
-                      key={idx}
-                      className="px-3 py-1.5 backdrop-blur-xl bg-white/5 border border-white/10 rounded-full text-xs text-white/80"
-                    >
+                    <span key={idx} className={`px-3 py-1.5 rounded-full text-xs text-white/80 ${blackout ? 'bg-[#111] border border-[#333]' : 'backdrop-blur-xl bg-white/5 border border-white/10'}`}>
                       {service}
                     </span>
                   ))}
@@ -238,33 +174,21 @@ export function HospitalSheet({ location, onClose, onStartRoute, onVote }: Hospi
               </div>
             )}
 
-            {/* Action Buttons */}
+            {/* Actions */}
             <div className="flex gap-3">
-              <button
-                onClick={() => window.alert('Calling ' + (location.phone || '125'))}
-                className="flex-1 backdrop-blur-xl bg-white/10 border border-white/10 rounded-2xl py-4
-                         hover:bg-white/15 active:scale-95 transition-all"
-              >
+              <button onClick={() => window.alert(t(lang, 'call') + ' ' + (location.phone || '125'))}
+                className={`flex-1 rounded-2xl py-4 active:scale-95 transition-all ${blackout ? 'bg-[#111] border border-[#333]' : 'backdrop-blur-xl bg-white/10 border border-white/10'} hover:bg-white/15`}>
                 <div className="flex items-center justify-center gap-2">
                   <Phone className="w-5 h-5 text-white" />
-                  <span className="text-white" style={{ fontWeight: 600 }}>Call</span>
+                  <span className="text-white" style={{ fontWeight: 600 }}>{t(lang, 'call')}</span>
                 </div>
               </button>
-              <button
-                onClick={() => onStartRoute(location)}
-                className="flex-[2] rounded-2xl py-4 border-2
-                         hover:shadow-[0_0_40px_rgba(0,255,149,0.4)] active:scale-95 transition-all"
-                style={{
-                  backgroundColor: '#00FF95',
-                  borderColor: '#00FF95',
-                  boxShadow: '0 0 30px rgba(0, 255, 149, 0.3)',
-                }}
-              >
+              <button onClick={() => onStartRoute(location)}
+                className="flex-[2] rounded-2xl py-4 border-2 hover:shadow-[0_0_40px_rgba(0,255,149,0.4)] active:scale-95 transition-all"
+                style={{ backgroundColor: '#00FF95', borderColor: '#00FF95', boxShadow: '0 0 30px rgba(0,255,149,0.3)' }}>
                 <div className="flex items-center justify-center gap-2">
                   <Navigation className="w-5 h-5 text-[#05070A]" />
-                  <span className="text-[#05070A]" style={{ fontWeight: 700, fontSize: '16px' }}>
-                    Start Safest Route
-                  </span>
+                  <span className="text-[#05070A]" style={{ fontWeight: 700, fontSize: '14px' }}>{t(lang, 'start_route')}</span>
                 </div>
               </button>
             </div>

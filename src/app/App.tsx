@@ -220,9 +220,9 @@ export default function App() {
          style={{ backgroundColor: blackout ? '#000000' : '#05070A' }}>
       <TacticalMap locations={allLocations} userLocation={center} onLocationSelect={setSelectedLocation} blackout={blackout} />
       <FloatingHeader batterySaver={true} batteryLevel={73} onSOSPress={handleSOSPress} lang={lang} blackout={blackout} onBlackoutToggle={handleBlackoutToggle} />
-      <HospitalSheet location={selectedLocation} onClose={() => setSelectedLocation(null)} onStartRoute={handleStartRoute} onVote={handleVote} />
+      <HospitalSheet location={selectedLocation} onClose={() => setSelectedLocation(null)} onStartRoute={handleStartRoute} onVote={handleVote} lang={lang} blackout={blackout} />
       <FamilySafetyCircle isOpen={showFamilyCircle} onClose={() => setShowFamilyCircle(false)} members={FAMILY_MEMBERS} />
-      <BottomNavigation activeTab={activeTab} onTabChange={handleTabChange} alertCount={dangerCount} alertPulsing={alertPulsing} />
+      <BottomNavigation activeTab={activeTab} onTabChange={handleTabChange} alertCount={dangerCount} alertPulsing={alertPulsing} lang={lang} blackout={blackout} />
       <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} lang={lang} onLangChange={handleLangChange} blackout={blackout} onBlackoutToggle={handleBlackoutToggle} />
 
       {/* Vaul Alerts Drawer */}
