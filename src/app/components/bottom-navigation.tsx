@@ -1,19 +1,40 @@
-import React from 'react';
-import { Map, Bell, Shield, Settings } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Map, Bell, Shield, Settings, Check } from 'lucide-react';
 
 interface BottomNavigationProps {
   activeTab: 'map' | 'alerts' | 'safe' | 'settings';
   onTabChange: (tab: 'map' | 'alerts' | 'safe' | 'settings') => void;
   alertCount?: number;
+  alertPulsing?: boolean;
 }
 
-export function BottomNavigation({ activeTab, onTabChange, alertCount = 0 }: BottomNavigationProps) {
+export function BottomNavigation({ activeTab, onTabChange, alertCount = 0, alertPulsing = false }: BottomNavigationProps) {
+  const [safeConfirmed, setSafeConfirmed] = useState(false);
+
   const tabs = [
     { id: 'map' as const, icon: Map, label: 'Map' },
     { id: 'alerts' as const, icon: Bell, label: 'Alerts', badge: alertCount },
-    { id: 'safe' as const, icon: Shield, label: 'I AM SAFE' },
+    { id: 'safe' as const, icon: safeConfirmed ? Check : Shield, label: safeConfirmed ? 'SAFE ✓' : 'I AM SAFE' },
     { id: 'settings' as const, icon: Settings, label: 'Settings' },
   ];
+
+  // ── Checkmark feedback: revert after 3 seconds ──
+  useEffect(() => {
+    if (safeConfirmed) {
+      const timer = setTimeout(() => setSafeConfirmed(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [safeConfirmed]);
+
+  const handleTabClick = (tabId: 'map' | 'alerts' | 'safe' | 'settings') => {
+    if (tabId === 'safe') {
+      // Set confirmed state → shows Checkmark for 3s
+      setSafeConfirmed(true);
+      // Haptic feedback
+      try { navigator.vibrate(100); } catch {}
+    }
+    onTabChange(tabId);
+  };
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-30 pb-safe pointer-events-none">
@@ -28,7 +49,7 @@ export function BottomNavigation({ activeTab, onTabChange, alertCount = 0 }: Bot
               return (
                 <button
                   key={tab.id}
-                  onClick={() => onTabChange(tab.id)}
+                  onClick={() => handleTabClick(tab.id)}
                   className={`
                     relative flex flex-col items-center justify-center gap-1 px-4 py-3 rounded-2xl
                     transition-all duration-200 active:scale-95 min-w-[72px]
@@ -40,27 +61,26 @@ export function BottomNavigation({ activeTab, onTabChange, alertCount = 0 }: Bot
                   {isActive && (
                     <div
                       className="absolute inset-0 blur-xl opacity-30 rounded-2xl"
-                      style={{
-                        backgroundColor: isSafe ? '#00FF95' : '#00D1FF',
-                      }}
+                      style={{ backgroundColor: isSafe ? '#00FF95' : '#00D1FF' }}
                     />
                   )}
 
                   {/* Icon container */}
                   <div className="relative">
-                    {/* Special styling for "I AM SAFE" button */}
                     {isSafe ? (
                       <div
                         className={`
                           w-14 h-14 rounded-2xl flex items-center justify-center
                           border-2 transition-all
-                          ${isActive 
-                            ? 'shadow-[0_0_30px_rgba(0,255,149,0.5)]' 
-                            : 'shadow-[0_0_20px_rgba(0,255,149,0.3)]'
+                          ${safeConfirmed
+                            ? 'shadow-[0_0_40px_rgba(0,255,149,0.7)]'
+                            : isActive
+                              ? 'shadow-[0_0_30px_rgba(0,255,149,0.5)]'
+                              : 'shadow-[0_0_20px_rgba(0,255,149,0.3)]'
                           }
                         `}
                         style={{
-                          backgroundColor: '#00FF95',
+                          backgroundColor: safeConfirmed ? '#00CC77' : '#00FF95',
                           borderColor: '#00FF95',
                         }}
                       >
@@ -75,12 +95,13 @@ export function BottomNavigation({ activeTab, onTabChange, alertCount = 0 }: Bot
                           `}
                           strokeWidth={isActive ? 2.5 : 2}
                         />
-                        
-                        {/* Badge for alerts */}
-                        {tab.badge && tab.badge > 0 && (
-                          <div className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center
+
+                        {/* Alert badge with optional pulsing */}
+                        {tab.badge != null && tab.badge > 0 && (
+                          <div className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center
                                         bg-[#FF3B3B] border-2 border-[#05070A] rounded-full
-                                        shadow-[0_0_10px_rgba(255,59,59,0.6)]">
+                                        shadow-[0_0_10px_rgba(255,59,59,0.6)]
+                                        ${alertPulsing ? 'animate-pulse' : ''}`}>
                             <span className="text-[10px] text-white px-1" style={{ fontWeight: 700 }}>
                               {tab.badge > 99 ? '99+' : tab.badge}
                             </span>
@@ -94,7 +115,7 @@ export function BottomNavigation({ activeTab, onTabChange, alertCount = 0 }: Bot
                   <span
                     className={`
                       text-xs transition-colors relative
-                      ${isActive 
+                      ${isActive
                         ? isSafe ? 'text-[#00FF95]' : 'text-[#00D1FF]'
                         : 'text-white/60'
                       }
@@ -112,7 +133,7 @@ export function BottomNavigation({ activeTab, onTabChange, alertCount = 0 }: Bot
           </div>
         </div>
 
-        {/* Safe zone indicator */}
+        {/* Network status */}
         <div className="flex justify-center mt-2">
           <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-full px-3 py-1.5">
             <div className="flex items-center gap-2">
