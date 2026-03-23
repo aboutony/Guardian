@@ -140,6 +140,10 @@ export interface GuardianResource {
   verifiedBy?: string;
   isOperational: boolean;
   lastVerified: string;
+  /** Max people capacity (shelters/NGOs) */
+  capacity?: number;
+  /** Current occupancy count */
+  occupancy?: number;
 }
 
 export interface DangerZone {
@@ -232,45 +236,45 @@ export const GUARDIAN_DATA: GuardianDataStore = {
     // ══════════════════════════════════════════════════════════════════
     // NGO / AID CENTERS (18)
     // ══════════════════════════════════════════════════════════════════
-    { id: 'ngo-001', name: 'Lebanese Red Cross - HQ', nameAr: 'الصليب الأحمر اللبناني - المركز', nameFr: 'Croix-Rouge Libanaise - Siège', category: 'ngo', lat: 33.8869, lng: 35.5131, phone: '+961-1-372802', operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-23T06:00:00Z' },
-    { id: 'ngo-002', name: 'Amel Association - Beirut', nameAr: 'جمعية أمل - بيروت', nameFr: 'Association Amel - Beyrouth', category: 'ngo', lat: 33.8773, lng: 35.5099, phone: '+961-1-741851', operatingHours: '08:00-17:00', verifiedBy: 'Amel', isOperational: true, lastVerified: '2026-03-23T08:00:00Z' },
-    { id: 'ngo-003', name: 'UNRWA - Shatila Camp', nameAr: 'الأونروا - مخيم شاتيلا', nameFr: 'UNRWA - Camp de Chatila', category: 'ngo', lat: 33.8603, lng: 35.4967, phone: '+961-1-840490', operatingHours: '08:00-16:00', verifiedBy: 'UNRWA', isOperational: true, lastVerified: '2026-03-23T07:00:00Z' },
-    { id: 'ngo-004', name: 'Caritas Lebanon - Jbeil', nameAr: 'كاريتاس لبنان - جبيل', nameFr: 'Caritas Liban - Byblos', category: 'ngo', lat: 34.1209, lng: 35.6517, phone: '+961-9-544700', operatingHours: '08:00-16:00', verifiedBy: 'Caritas', isOperational: true, lastVerified: '2026-03-22T10:00:00Z' },
-    { id: 'ngo-005', name: 'LRC Health Center - Baouchrieh', nameAr: 'مركز الصليب الأحمر - البوشرية', category: 'ngo', lat: 33.8850, lng: 35.5520, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-23T05:00:00Z' },
-    { id: 'ngo-006', name: 'LRC Health Center - Nabatieh', nameAr: 'مركز الصليب الأحمر - النبطية', category: 'ngo', lat: 33.3750, lng: 35.4820, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-22T14:00:00Z' },
-    { id: 'ngo-007', name: 'Amel Community Center - Tyre', nameAr: 'مركز أمل المجتمعي - صور', category: 'ngo', lat: 33.2720, lng: 35.2030, operatingHours: '08:00-16:00', verifiedBy: 'Amel', isOperational: true, lastVerified: '2026-03-22T12:00:00Z' },
-    { id: 'ngo-008', name: 'Caritas Center - Akkar', nameAr: 'مركز كاريتاس - عكار', category: 'ngo', lat: 34.5450, lng: 36.0780, operatingHours: '09:00-17:00', verifiedBy: 'Caritas', isOperational: true, lastVerified: '2026-03-22T10:00:00Z' },
-    { id: 'ngo-009', name: 'Caritas Center - Zahle', nameAr: 'مركز كاريتاس - زحلة', category: 'ngo', lat: 33.8480, lng: 35.9020, operatingHours: '09:00-17:00', verifiedBy: 'Caritas', isOperational: true, lastVerified: '2026-03-21T15:00:00Z' },
-    { id: 'ngo-010', name: 'UNRWA - Nahr el-Bared', nameAr: 'الأونروا - نهر البارد', category: 'ngo', lat: 34.5120, lng: 35.9650, operatingHours: '24/7', verifiedBy: 'UNRWA', isOperational: true, lastVerified: '2026-03-22T08:00:00Z' },
-    { id: 'ngo-011', name: 'Amel - Haret Hreik Center', nameAr: 'أمل - مركز حارة حريك', category: 'ngo', lat: 33.8450, lng: 35.5020, operatingHours: '08:00-16:00', verifiedBy: 'Amel', isOperational: true, lastVerified: '2026-03-22T09:00:00Z' },
-    { id: 'ngo-012', name: 'UNRWA - Siblin Camp', nameAr: 'الأونروا - مخيم سبلين', category: 'ngo', lat: 33.6250, lng: 35.4520, operatingHours: '24/7', verifiedBy: 'UNRWA', isOperational: true, lastVerified: '2026-03-22T11:00:00Z' },
-    { id: 'ngo-013', name: 'LRC - Tripoli Station', nameAr: 'الصليب الأحمر - محطة طرابلس', category: 'ngo', lat: 34.4330, lng: 35.8380, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-23T04:00:00Z' },
+    { id: 'ngo-001', name: 'Lebanese Red Cross - HQ', nameAr: 'الصليب الأحمر اللبناني - المركز', nameFr: 'Croix-Rouge Libanaise - Siège', category: 'ngo', lat: 33.8869, lng: 35.5131, phone: '+961-1-372802', operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-23T06:00:00Z', capacity: 200, occupancy: 85 },
+    { id: 'ngo-002', name: 'Amel Association - Beirut', nameAr: 'جمعية أمل - بيروت', nameFr: 'Association Amel - Beyrouth', category: 'ngo', lat: 33.8773, lng: 35.5099, phone: '+961-1-741851', operatingHours: '08:00-17:00', verifiedBy: 'Amel', isOperational: true, lastVerified: '2026-03-23T08:00:00Z', capacity: 150, occupancy: 140 },
+    { id: 'ngo-003', name: 'UNRWA - Shatila Camp', nameAr: 'الأونروا - مخيم شاتيلا', nameFr: 'UNRWA - Camp de Chatila', category: 'ngo', lat: 33.8603, lng: 35.4967, phone: '+961-1-840490', operatingHours: '08:00-16:00', verifiedBy: 'UNRWA', isOperational: true, lastVerified: '2026-03-23T07:00:00Z', capacity: 500, occupancy: 480 },
+    { id: 'ngo-004', name: 'Caritas Lebanon - Jbeil', nameAr: 'كاريتاس لبنان - جبيل', nameFr: 'Caritas Liban - Byblos', category: 'ngo', lat: 34.1209, lng: 35.6517, phone: '+961-9-544700', operatingHours: '08:00-16:00', verifiedBy: 'Caritas', isOperational: true, lastVerified: '2026-03-22T10:00:00Z', capacity: 120, occupancy: 45 },
+    { id: 'ngo-005', name: 'LRC Health Center - Baouchrieh', nameAr: 'مركز الصليب الأحمر - البوشرية', category: 'ngo', lat: 33.8850, lng: 35.5520, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-23T05:00:00Z', capacity: 100, occupancy: 72 },
+    { id: 'ngo-006', name: 'LRC Health Center - Nabatieh', nameAr: 'مركز الصليب الأحمر - النبطية', category: 'ngo', lat: 33.3750, lng: 35.4820, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-22T14:00:00Z', capacity: 80, occupancy: 78 },
+    { id: 'ngo-007', name: 'Amel Community Center - Tyre', nameAr: 'مركز أمل المجتمعي - صور', category: 'ngo', lat: 33.2720, lng: 35.2030, operatingHours: '08:00-16:00', verifiedBy: 'Amel', isOperational: true, lastVerified: '2026-03-22T12:00:00Z', capacity: 90, occupancy: 30 },
+    { id: 'ngo-008', name: 'Caritas Center - Akkar', nameAr: 'مركز كاريتاس - عكار', category: 'ngo', lat: 34.5450, lng: 36.0780, operatingHours: '09:00-17:00', verifiedBy: 'Caritas', isOperational: true, lastVerified: '2026-03-22T10:00:00Z', capacity: 60, occupancy: 55 },
+    { id: 'ngo-009', name: 'Caritas Center - Zahle', nameAr: 'مركز كاريتاس - زحلة', category: 'ngo', lat: 33.8480, lng: 35.9020, operatingHours: '09:00-17:00', verifiedBy: 'Caritas', isOperational: true, lastVerified: '2026-03-21T15:00:00Z', capacity: 75, occupancy: 20 },
+    { id: 'ngo-010', name: 'UNRWA - Nahr el-Bared', nameAr: 'الأونروا - نهر البارد', category: 'ngo', lat: 34.5120, lng: 35.9650, operatingHours: '24/7', verifiedBy: 'UNRWA', isOperational: true, lastVerified: '2026-03-22T08:00:00Z', capacity: 400, occupancy: 390 },
+    { id: 'ngo-011', name: 'Amel - Haret Hreik Center', nameAr: 'أمل - مركز حارة حريك', category: 'ngo', lat: 33.8450, lng: 35.5020, operatingHours: '08:00-16:00', verifiedBy: 'Amel', isOperational: true, lastVerified: '2026-03-22T09:00:00Z', capacity: 110, occupancy: 95 },
+    { id: 'ngo-012', name: 'UNRWA - Siblin Camp', nameAr: 'الأونروا - مخيم سبلين', category: 'ngo', lat: 33.6250, lng: 35.4520, operatingHours: '24/7', verifiedBy: 'UNRWA', isOperational: true, lastVerified: '2026-03-22T11:00:00Z', capacity: 300, occupancy: 180 },
+    { id: 'ngo-013', name: 'LRC - Tripoli Station', nameAr: 'الصليب الأحمر - محطة طرابلس', category: 'ngo', lat: 34.4330, lng: 35.8380, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-23T04:00:00Z', capacity: 130, occupancy: 65 },
     // Riyadh NGOs
-    { id: 'ngo-r01', name: 'Saudi Red Crescent - Riyadh HQ', nameAr: 'الهلال الأحمر السعودي - الرياض', category: 'ngo', lat: 24.7016, lng: 46.7140, phone: '+966-11-201-1111', operatingHours: '24/7', verifiedBy: 'SRCA', isOperational: true, lastVerified: '2026-03-23T10:00:00Z' },
-    { id: 'ngo-r02', name: 'King Salman Humanitarian Aid', nameAr: 'مركز الملك سلمان للإغاثة', category: 'ngo', lat: 24.6950, lng: 46.6850, operatingHours: '08:00-17:00', isOperational: true, lastVerified: '2026-03-23T09:00:00Z' },
-    { id: 'ngo-r03', name: 'UNHCR Riyadh Office', nameAr: 'مكتب المفوضية السامية - الرياض', category: 'ngo', lat: 24.6800, lng: 46.6900, operatingHours: '08:00-16:00', isOperational: true, lastVerified: '2026-03-22T12:00:00Z' },
-    { id: 'ngo-r04', name: 'Islamic Relief - Riyadh', nameAr: 'الإغاثة الإسلامية - الرياض', category: 'ngo', lat: 24.7500, lng: 46.6500, operatingHours: '09:00-17:00', isOperational: true, lastVerified: '2026-03-22T14:00:00Z' },
-    { id: 'ngo-r05', name: 'Al-Nahda Philanthropic Society', nameAr: 'جمعية النهضة النسائية', category: 'ngo', lat: 24.6700, lng: 46.7000, operatingHours: '08:00-15:00', isOperational: true, lastVerified: '2026-03-22T10:00:00Z' },
+    { id: 'ngo-r01', name: 'Saudi Red Crescent - Riyadh HQ', nameAr: 'الهلال الأحمر السعودي - الرياض', category: 'ngo', lat: 24.7016, lng: 46.7140, phone: '+966-11-201-1111', operatingHours: '24/7', verifiedBy: 'SRCA', isOperational: true, lastVerified: '2026-03-23T10:00:00Z', capacity: 250, occupancy: 60 },
+    { id: 'ngo-r02', name: 'King Salman Humanitarian Aid', nameAr: 'مركز الملك سلمان للإغاثة', category: 'ngo', lat: 24.6950, lng: 46.6850, operatingHours: '08:00-17:00', isOperational: true, lastVerified: '2026-03-23T09:00:00Z', capacity: 180, occupancy: 40 },
+    { id: 'ngo-r03', name: 'UNHCR Riyadh Office', nameAr: 'مكتب المفوضية السامية - الرياض', category: 'ngo', lat: 24.6800, lng: 46.6900, operatingHours: '08:00-16:00', isOperational: true, lastVerified: '2026-03-22T12:00:00Z', capacity: 100, occupancy: 25 },
+    { id: 'ngo-r04', name: 'Islamic Relief - Riyadh', nameAr: 'الإغاثة الإسلامية - الرياض', category: 'ngo', lat: 24.7500, lng: 46.6500, operatingHours: '09:00-17:00', isOperational: true, lastVerified: '2026-03-22T14:00:00Z', capacity: 150, occupancy: 35 },
+    { id: 'ngo-r05', name: 'Al-Nahda Philanthropic Society', nameAr: 'جمعية النهضة النسائية', category: 'ngo', lat: 24.6700, lng: 46.7000, operatingHours: '08:00-15:00', isOperational: true, lastVerified: '2026-03-22T10:00:00Z', capacity: 80, occupancy: 50 },
 
     // ══════════════════════════════════════════════════════════════════
     // SHELTERS (15)
     // ══════════════════════════════════════════════════════════════════
-    { id: 'shlt-001', name: 'UNESCO Palace Shelter', nameAr: 'مأوى قصر اليونسكو', nameFr: 'Abri Palais UNESCO', category: 'shelter', lat: 33.8815, lng: 35.5125, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-23T05:00:00Z' },
-    { id: 'shlt-002', name: 'BIEL Emergency Shelter', nameAr: 'مأوى بيال الطارئ', category: 'shelter', lat: 33.8990, lng: 35.5210, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-23T06:00:00Z' },
-    { id: 'shlt-003', name: 'Tripoli Community Shelter', nameAr: 'مأوى طرابلس المجتمعي', category: 'shelter', lat: 34.4380, lng: 35.8400, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-22T14:00:00Z' },
-    { id: 'shlt-004', name: 'Saida Municipal Shelter', nameAr: 'مأوى بلدية صيدا', category: 'shelter', lat: 33.5630, lng: 35.3700, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T12:00:00Z' },
-    { id: 'shlt-005', name: 'Nabatieh Public Shelter', nameAr: 'مأوى النبطية العام', category: 'shelter', lat: 33.3810, lng: 35.4860, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T10:00:00Z' },
-    { id: 'shlt-006', name: 'Baalbek School Shelter', nameAr: 'مأوى مدرسة بعلبك', category: 'shelter', lat: 34.0080, lng: 36.2050, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-21T16:00:00Z' },
-    { id: 'shlt-007', name: 'Jounieh Relief Center', nameAr: 'مركز إغاثة جونيه', category: 'shelter', lat: 33.9790, lng: 35.6200, operatingHours: '24/7', verifiedBy: 'Caritas', isOperational: true, lastVerified: '2026-03-22T15:00:00Z' },
-    { id: 'shlt-008', name: 'Zahle Community Hall', nameAr: 'قاعة زحلة المجتمعية', category: 'shelter', lat: 33.8470, lng: 35.9070, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T11:00:00Z' },
-    { id: 'shlt-009', name: 'Tyre Port Shelter', nameAr: 'مأوى مرفأ صور', category: 'shelter', lat: 33.2690, lng: 35.1940, operatingHours: '24/7', verifiedBy: 'UNRWA', isOperational: true, lastVerified: '2026-03-22T08:00:00Z' },
-    { id: 'shlt-010', name: 'Byblos Civic Center', nameAr: 'المركز المدني - جبيل', category: 'shelter', lat: 34.1230, lng: 35.6500, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-21T14:00:00Z' },
+    { id: 'shlt-001', name: 'UNESCO Palace Shelter', nameAr: 'مأوى قصر اليونسكو', nameFr: 'Abri Palais UNESCO', category: 'shelter', lat: 33.8815, lng: 35.5125, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-23T05:00:00Z', capacity: 300, occupancy: 120 },
+    { id: 'shlt-002', name: 'BIEL Emergency Shelter', nameAr: 'مأوى بيال الطارئ', category: 'shelter', lat: 33.8990, lng: 35.5210, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-23T06:00:00Z', capacity: 500, occupancy: 480 },
+    { id: 'shlt-003', name: 'Tripoli Community Shelter', nameAr: 'مأوى طرابلس المجتمعي', category: 'shelter', lat: 34.4380, lng: 35.8400, operatingHours: '24/7', verifiedBy: 'LRC', isOperational: true, lastVerified: '2026-03-22T14:00:00Z', capacity: 200, occupancy: 150 },
+    { id: 'shlt-004', name: 'Saida Municipal Shelter', nameAr: 'مأوى بلدية صيدا', category: 'shelter', lat: 33.5630, lng: 35.3700, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T12:00:00Z', capacity: 180, occupancy: 60 },
+    { id: 'shlt-005', name: 'Nabatieh Public Shelter', nameAr: 'مأوى النبطية العام', category: 'shelter', lat: 33.3810, lng: 35.4860, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T10:00:00Z', capacity: 120, occupancy: 118 },
+    { id: 'shlt-006', name: 'Baalbek School Shelter', nameAr: 'مأوى مدرسة بعلبك', category: 'shelter', lat: 34.0080, lng: 36.2050, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-21T16:00:00Z', capacity: 100, occupancy: 90 },
+    { id: 'shlt-007', name: 'Jounieh Relief Center', nameAr: 'مركز إغاثة جونيه', category: 'shelter', lat: 33.9790, lng: 35.6200, operatingHours: '24/7', verifiedBy: 'Caritas', isOperational: true, lastVerified: '2026-03-22T15:00:00Z', capacity: 150, occupancy: 45 },
+    { id: 'shlt-008', name: 'Zahle Community Hall', nameAr: 'قاعة زحلة المجتمعية', category: 'shelter', lat: 33.8470, lng: 35.9070, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T11:00:00Z', capacity: 160, occupancy: 80 },
+    { id: 'shlt-009', name: 'Tyre Port Shelter', nameAr: 'مأوى مرفأ صور', category: 'shelter', lat: 33.2690, lng: 35.1940, operatingHours: '24/7', verifiedBy: 'UNRWA', isOperational: true, lastVerified: '2026-03-22T08:00:00Z', capacity: 220, occupancy: 210 },
+    { id: 'shlt-010', name: 'Byblos Civic Center', nameAr: 'المركز المدني - جبيل', category: 'shelter', lat: 34.1230, lng: 35.6500, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-21T14:00:00Z', capacity: 100, occupancy: 30 },
     // Riyadh Shelters
-    { id: 'shlt-r01', name: 'Civil Defense Shelter - Olaya', nameAr: 'مأوى الدفاع المدني - العليا', category: 'shelter', lat: 24.6880, lng: 46.6900, operatingHours: '24/7', verifiedBy: 'SRCA', isOperational: true, lastVerified: '2026-03-23T10:00:00Z' },
-    { id: 'shlt-r02', name: 'Red Crescent Emergency Shelter', nameAr: 'مأوى الهلال الأحمر الطارئ', category: 'shelter', lat: 24.7050, lng: 46.7200, operatingHours: '24/7', verifiedBy: 'SRCA', isOperational: true, lastVerified: '2026-03-23T08:00:00Z' },
-    { id: 'shlt-r03', name: 'Al Malaz Community Shelter', nameAr: 'مأوى الملز المجتمعي', category: 'shelter', lat: 24.6550, lng: 46.7100, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T16:00:00Z' },
-    { id: 'shlt-r04', name: 'King Fahd Stadium Shelter', nameAr: 'مأوى استاد الملك فهد', category: 'shelter', lat: 24.7900, lng: 46.8300, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T14:00:00Z' },
-    { id: 'shlt-r05', name: 'DQ Emergency Shelter', nameAr: 'مأوى الحي الدبلوماسي', category: 'shelter', lat: 24.6300, lng: 46.6450, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T12:00:00Z' },
+    { id: 'shlt-r01', name: 'Civil Defense Shelter - Olaya', nameAr: 'مأوى الدفاع المدني - العليا', category: 'shelter', lat: 24.6880, lng: 46.6900, operatingHours: '24/7', verifiedBy: 'SRCA', isOperational: true, lastVerified: '2026-03-23T10:00:00Z', capacity: 400, occupancy: 80 },
+    { id: 'shlt-r02', name: 'Red Crescent Emergency Shelter', nameAr: 'مأوى الهلال الأحمر الطارئ', category: 'shelter', lat: 24.7050, lng: 46.7200, operatingHours: '24/7', verifiedBy: 'SRCA', isOperational: true, lastVerified: '2026-03-23T08:00:00Z', capacity: 350, occupancy: 100 },
+    { id: 'shlt-r03', name: 'Al Malaz Community Shelter', nameAr: 'مأوى الملز المجتمعي', category: 'shelter', lat: 24.6550, lng: 46.7100, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T16:00:00Z', capacity: 200, occupancy: 55 },
+    { id: 'shlt-r04', name: 'King Fahd Stadium Shelter', nameAr: 'مأوى استاد الملك فهد', category: 'shelter', lat: 24.7900, lng: 46.8300, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T14:00:00Z', capacity: 1000, occupancy: 200 },
+    { id: 'shlt-r05', name: 'DQ Emergency Shelter', nameAr: 'مأوى الحي الدبلوماسي', category: 'shelter', lat: 24.6300, lng: 46.6450, operatingHours: '24/7', isOperational: true, lastVerified: '2026-03-22T12:00:00Z', capacity: 250, occupancy: 70 },
 
     // ══════════════════════════════════════════════════════════════════
     // WATER POINTS (15)
@@ -340,6 +344,32 @@ export const ROUTE_COLORS = {
 // ---------------------------------------------------------------------------
 // 10. APP META
 // ---------------------------------------------------------------------------
-export const APP_VERSION = '16.1.1';
-export const APP_CODENAME = 'Universal Resource Injection';
-export const PHASE = 16.1;
+export const APP_VERSION = '16.2.0';
+export const APP_CODENAME = 'Trust & Dynamic Capacity';
+export const PHASE = 16.2;
+
+// ---------------------------------------------------------------------------
+// 11. CAPACITY STATUS THRESHOLDS
+// ---------------------------------------------------------------------------
+export const CAPACITY_STATUS = {
+  /** <70% = Green (Open) */
+  OPEN_THRESHOLD: 0.7,
+  /** 70-95% = Orange (Limited) */
+  LIMITED_THRESHOLD: 0.95,
+  /** >95% = Red (Full) */
+} as const;
+
+export function getCapacityStatus(capacity?: number, occupancy?: number): 'open' | 'limited' | 'full' | 'unknown' {
+  if (capacity == null || occupancy == null || capacity === 0) return 'unknown';
+  const ratio = occupancy / capacity;
+  if (ratio >= CAPACITY_STATUS.LIMITED_THRESHOLD) return 'full';
+  if (ratio >= CAPACITY_STATUS.OPEN_THRESHOLD) return 'limited';
+  return 'open';
+}
+
+export const CAPACITY_RING_COLORS: Record<string, string> = {
+  open: '#22C55E',
+  limited: '#F59E0B',
+  full: '#EF4444',
+  unknown: '#6B7280',
+};

@@ -1,7 +1,7 @@
 // ============================================================================
 // Guardian — App.tsx
-// Phase 16.1 → Restoration Phase 01: Universal Resource Injection
-// Mobile-First Responsive + 7-Layer Category Binding
+// Phase 16.2: Multi-User Verification & Dynamic Status
+// Trust System (Confirm/Dispute) + Dynamic Shelter Capacity Rings
 // Generated via Antigravity Editor
 // ============================================================================
 
@@ -23,6 +23,8 @@ import {
   DARK_TILE_URL,
   MAP_DEFAULT_CENTER,
   MAP_DEFAULT_ZOOM,
+  getCapacityStatus,
+  CAPACITY_RING_COLORS,
   type GuardianResource,
   type DangerZone,
   type ResourceCategory,
@@ -53,8 +55,11 @@ interface UserPosition {
 // ---------------------------------------------------------------------------
 // LEAFLET CUSTOM ICONS — Emoji DivIcons per category
 // ---------------------------------------------------------------------------
-function createCategoryIcon(category: ResourceCategory): L.DivIcon {
+function createCategoryIcon(category: ResourceCategory, capacityStatus?: string): L.DivIcon {
   const emoji = CATEGORY_ICONS[category] || '📍';
+  const ringColor = (category === 'shelter' || category === 'ngo') && capacityStatus
+    ? CAPACITY_RING_COLORS[capacityStatus] || THEME.primary
+    : THEME.primary;
   return L.divIcon({
     html: `<div style="
       font-size: 20px;
@@ -64,9 +69,9 @@ function createCategoryIcon(category: ResourceCategory): L.DivIcon {
       align-items: center;
       justify-content: center;
       background: rgba(15, 23, 42, 0.85);
-      border: 2px solid ${THEME.primary};
+      border: 2px solid ${ringColor};
       border-radius: 50%;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5), 0 0 6px ${ringColor}44;
     ">${emoji}</div>`,
     className: 'guardian-marker',
     iconSize: [32, 32],
@@ -138,6 +143,43 @@ export default function App() {
   const [navigation, setNavigation] = useState<NavigationResult | null>(null);
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
   const [safeConfirm, setSafeConfirm] = useState<string | null>(null);
+
+  // ── TRUST / VERIFICATION STATE (persisted in localStorage) ─────────
+  const [verificationData, setVerificationData] = useState<Record<string, { confirms: number; disputes: number }>>(() => {
+    try {
+      const saved = localStorage.getItem('guardian_verification');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+
+  // Persist verification to localStorage on change
+  useEffect(() => {
+    try { localStorage.setItem('guardian_verification', JSON.stringify(verificationData)); } catch {}
+  }, [verificationData]);
+
+  const handleConfirm = useCallback((id: string) => {
+    setVerificationData((prev) => {
+      const entry = prev[id] || { confirms: 0, disputes: 0 };
+      return { ...prev, [id]: { ...entry, confirms: entry.confirms + 1 } };
+    });
+  }, []);
+
+  const handleDispute = useCallback((id: string) => {
+    setVerificationData((prev) => {
+      const entry = prev[id] || { confirms: 0, disputes: 0 };
+      return { ...prev, [id]: { ...entry, disputes: entry.disputes + 1 } };
+    });
+  }, []);
+
+  const getDisputeOpacity = useCallback((id: string): number => {
+    const entry = verificationData[id];
+    if (entry && entry.disputes > 5) return 0.4;
+    return 1;
+  }, [verificationData]);
+
+  const getVerificationCount = useCallback((id: string): { confirms: number; disputes: number } => {
+    return verificationData[id] || { confirms: 0, disputes: 0 };
+  }, [verificationData]);
 
   // ── SAFETY DATA HOOK ───────────────────────────────────────────────
   const { alerts, safeCheckIns, addSafeCheckIn, districts } = useSafetyData();
@@ -340,27 +382,62 @@ export default function App() {
           </Marker>
 
           {/* Resource Markers — 7 layers from GUARDIAN_DATA */}
-          {filteredResources.map((r) => (
+          {filteredResources.map((r) => {
+            const capStatus = getCapacityStatus(r.capacity, r.occupancy);
+            const opacity = getDisputeOpacity(r.id);
+            const vCount = getVerificationCount(r.id);
+            return (
             <Marker
               key={r.id}
               position={[r.lat, r.lng]}
-              icon={createCategoryIcon(r.category)}
+              icon={createCategoryIcon(r.category, capStatus)}
+              opacity={opacity}
               eventHandlers={{ click: () => handleResourceSelect(r) }}
             >
               <Popup>
-                <div style={{ fontFamily: SYSTEM_FONT_STACK, fontSize: '13px', maxWidth: '220px' }}>
+                <div style={{ fontFamily: SYSTEM_FONT_STACK, fontSize: '13px', maxWidth: '240px' }}>
                   <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>
                     {CATEGORY_ICONS[r.category]} {language === 'ar' && r.nameAr ? r.nameAr : language === 'fr' && r.nameFr ? r.nameFr : r.name}
                   </div>
                   <div style={{ color: '#94A3B8', fontSize: '11px', marginBottom: '6px' }}>
                     {CATEGORY_LABELS[r.category]?.en} · {r.operatingHours || 'Hours N/A'}
                   </div>
+
+                  {/* Capacity badge for shelters/NGOs */}
+                  {(r.category === 'shelter' || r.category === 'ngo') && r.capacity != null && (
+                    <div style={{
+                      display: 'inline-block', padding: '2px 8px', borderRadius: '6px', fontSize: '10px',
+                      fontWeight: 700, marginBottom: '6px',
+                      background: CAPACITY_RING_COLORS[capStatus] + '22',
+                      color: CAPACITY_RING_COLORS[capStatus],
+                      border: `1px solid ${CAPACITY_RING_COLORS[capStatus]}44`,
+                    }}>
+                      {capStatus === 'open' ? '🟢 Open' : capStatus === 'limited' ? '🟠 Limited' : capStatus === 'full' ? '🔴 Full' : '⚪ Unknown'}
+                      {' · '}{r.occupancy}/{r.capacity}
+                    </div>
+                  )}
+
                   {r.phone && (
                     <a href={`tel:${r.phone}`} className="popup-btn popup-btn-call">📞 Call</a>
                   )}
                   <button onClick={() => navigateTo({ lat: r.lat, lng: r.lng })} className="popup-btn popup-btn-nav">
                     🧭 Navigate
                   </button>
+
+                  {/* Trust System: Confirm / Dispute */}
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <button onClick={() => handleConfirm(r.id)} className="popup-btn" style={{ background: '#22C55E', color: '#000' }}>✅ Confirm</button>
+                    <button onClick={() => handleDispute(r.id)} className="popup-btn" style={{ background: '#EF4444', color: '#fff' }}>❌ Dispute</button>
+                    <span style={{ fontSize: '9px', color: '#94A3B8' }}>
+                      {vCount.confirms}↑ {vCount.disputes}↓
+                    </span>
+                  </div>
+                  {vCount.disputes > 5 && (
+                    <div style={{ marginTop: '4px', fontSize: '10px', color: '#EF4444', fontWeight: 600 }}>
+                      ⚠️ Disputed ({vCount.disputes} reports)
+                    </div>
+                  )}
+
                   {r.verifiedBy && (
                     <div style={{ marginTop: '6px', fontSize: '10px', color: THEME.success }}>
                       ✓ Verified by {r.verifiedBy}
@@ -369,7 +446,8 @@ export default function App() {
                 </div>
               </Popup>
             </Marker>
-          ))}
+          );
+          })}
 
           {/* Danger Zone Circles */}
           {dangerZones.map((dz) => (
