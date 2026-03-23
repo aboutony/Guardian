@@ -4,196 +4,174 @@ import { FloatingHeader } from './components/floating-header';
 import { HospitalSheet } from './components/hospital-sheet';
 import { FamilySafetyCircle } from './components/family-safety-circle';
 import { BottomNavigation } from './components/bottom-navigation';
-import { GUARDIAN_DATA, CATEGORY_LABELS, MAP_DEFAULT_CENTER } from '../constants';
+import { GUARDIAN_DATA, MAP_DEFAULT_CENTER } from '../constants';
 
-// ── Types for Figma component interfaces ──────────────────────
-interface FigmaLocation {
-  id: string;
-  name: string;
-  type: 'hospital' | 'shelter' | 'police' | 'danger' | 'safe-zone';
-  category?: string;
-  lat: number;
-  lng: number;
-  safetyScore?: number;
-  verifiedBy?: number;
-  status?: 'open' | 'closed' | 'limited';
-  distance?: string;
-  eta?: string;
-  address?: string;
-  phone?: string;
-  services?: string[];
+// ═══════════════════════════════════════════════════════════════
+// ABSOLUTE DATA EXTRACTION — bulletproof, handles any structure
+// ═══════════════════════════════════════════════════════════════
+
+function extractAllResources(): any[] {
+  const gd = GUARDIAN_DATA as any;
+  if (!gd) return [];
+
+  // If GUARDIAN_DATA is itself an array, use it directly
+  if (Array.isArray(gd)) return gd;
+
+  // Otherwise, flatten ALL array values from the object
+  const all: any[] = [];
+  for (const key of Object.keys(gd)) {
+    const val = gd[key];
+    if (Array.isArray(val)) {
+      for (const item of val) {
+        // Tag each item with its source key (for category detection)
+        all.push({ ...item, _sourceKey: key });
+      }
+    }
+  }
+  return all;
 }
 
-// ── Adapter: GUARDIAN_DATA resource → Figma Location ───────────
-function resourceToLocation(r: any): FigmaLocation {
-  const typeMap: Record<string, FigmaLocation['type']> = {
-    hospital: 'hospital',
-    shelter: 'shelter',
-    ngo: 'shelter',
-    bakery: 'safe-zone',
-    pharmacy: 'safe-zone',
-    water_point: 'safe-zone',
-    fuel_station: 'safe-zone',
-  };
-  return {
-    id: r.id,
-    name: r.name,
-    type: typeMap[r.category] || 'safe-zone',
-    category: r.category,
-    lat: r.lat,
-    lng: r.lng,
-    safetyScore: r.verificationCount ? Math.min(99, 60 + r.verificationCount * 3) : 80,
-    verifiedBy: r.verificationCount || 0,
-    status: r.isOperational ? 'open' : 'closed',
-    distance: '',
-    eta: '',
-    address: r.address || '',
-    phone: r.phone,
-    services: [
-      (CATEGORY_LABELS as any)[r.category]?.en || r.category,
-      r.operatingHours || '',
-    ].filter(Boolean),
-  };
+function guessCategory(item: any): string {
+  // Use explicit category if present
+  if (item.category) return item.category;
+  // Infer from the source key
+  const sk = (item._sourceKey || '').toLowerCase();
+  if (sk.includes('hospital')) return 'hospital';
+  if (sk.includes('baker')) return 'bakery';
+  if (sk.includes('pharmac')) return 'pharmacy';
+  if (sk.includes('ngo')) return 'ngo';
+  if (sk.includes('shelter')) return 'shelter';
+  if (sk.includes('water')) return 'water_point';
+  if (sk.includes('fuel')) return 'fuel_station';
+  if (sk.includes('danger') || sk.includes('airstrike') || sk.includes('alert') || sk.includes('roadblock')) return 'danger';
+  return 'hospital'; // fallback
 }
 
-// ── Adapter: Danger zone → Figma Location ─────────────────────
-function dangerToLocation(dz: any): FigmaLocation {
-  return {
-    id: dz.id,
-    name: dz.description,
-    type: 'danger',
-    lat: dz.lat,
-    lng: dz.lng,
-    safetyScore: dz.severity === 'critical' ? 10 : dz.severity === 'high' ? 25 : 40,
-    verifiedBy: 0,
-    status: 'closed',
-    distance: `${dz.radiusKm} km radius`,
-    address: `${dz.severity.toUpperCase()} zone — avoid area`,
-  };
+function guessType(cat: string): 'hospital' | 'shelter' | 'danger' | 'safe-zone' {
+  if (cat === 'hospital') return 'hospital';
+  if (cat === 'shelter' || cat === 'ngo') return 'shelter';
+  if (cat === 'danger' || cat === 'airstrike' || cat === 'roadblock') return 'danger';
+  return 'safe-zone';
 }
 
-// ── Family Circle data ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+// Family Circle data
 const FAMILY_MEMBERS = [
   { id: 'f1', name: 'Sarah Chen', avatar: 'S', batteryLevel: 85, lastSeen: '2 min ago', status: 'safe' as const, location: 'Home — 1.2 km away' },
-  { id: 'f2', name: 'Michael Johnson', avatar: 'M', batteryLevel: 45, lastSeen: '5 min ago', status: 'warning' as const, location: 'Downtown Office — 3.5 km' },
+  { id: 'f2', name: 'Michael Johnson', avatar: 'M', batteryLevel: 45, lastSeen: '5 min ago', status: 'warning' as const, location: 'Downtown — 3.5 km' },
   { id: 'f3', name: 'Emma Williams', avatar: 'E', batteryLevel: 92, lastSeen: '1 min ago', status: 'safe' as const, location: 'Central Park — 1.8 km' },
-  { id: 'f4', name: 'David Martinez', avatar: 'D', batteryLevel: 15, lastSeen: '15 min ago', status: 'warning' as const, location: 'Harbor District — 4.2 km' },
+  { id: 'f4', name: 'David Martinez', avatar: 'D', batteryLevel: 15, lastSeen: '15 min ago', status: 'warning' as const, location: 'Harbor — 4.2 km' },
 ];
 
 export default function App() {
-  const [selectedLocation, setSelectedLocation] = useState<FigmaLocation | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<any>(null);
   const [showFamilyCircle, setShowFamilyCircle] = useState(false);
   const [activeTab, setActiveTab] = useState<'map' | 'alerts' | 'safe' | 'settings'>('map');
-  const [batterySaver] = useState(true);
-  const [batteryLevel] = useState(73);
-  const [safeCheckIns, setSafeCheckIns] = useState<string[]>([]);
 
-  // ── Transform 113 GUARDIAN_DATA resources → Figma Locations ──
+  // ── ABSOLUTE DATA INJECTION ──
+  const allItems = useMemo(() => extractAllResources(), []);
+
   const allLocations = useMemo(() => {
-    const resources = [
-      ...(GUARDIAN_DATA.hospitals || []),
-      ...(GUARDIAN_DATA.bakeries || []),
-      ...(GUARDIAN_DATA.pharmacies || []),
-      ...(GUARDIAN_DATA.ngos || []),
-      ...(GUARDIAN_DATA.shelters || []),
-      ...(GUARDIAN_DATA.waterPoints || []),
-      ...(GUARDIAN_DATA.fuelStations || []),
-    ];
-    const mapped = resources.filter((r: any) => r.isOperational).map(resourceToLocation);
-    const dangers = (GUARDIAN_DATA.dangerZones || []).map(dangerToLocation);
-    return [...mapped, ...dangers];
+    return allItems.map((item) => {
+      const cat = guessCategory(item);
+      const type = guessType(cat);
+      return {
+        id: item.id || `item-${Math.random()}`,
+        name: item.name || item.description || 'Unknown',
+        type,
+        category: cat,
+        lat: item.lat ?? item.latitude ?? 33.89,
+        lng: item.lng ?? item.longitude ?? 35.50,
+        safetyScore: item.verificationCount ? Math.min(99, 60 + item.verificationCount * 3) : 80,
+        verifiedBy: item.verificationCount || 0,
+        status: (item.isOperational !== false ? 'open' : 'closed') as 'open' | 'closed',
+        distance: item.radiusKm ? `${item.radiusKm} km radius` : '',
+        eta: '',
+        address: item.address || '',
+        phone: item.phone || '',
+        services: [cat, item.operatingHours || ''].filter(Boolean),
+      };
+    });
+  }, [allItems]);
+
+  const dangerCount = allLocations.filter((l) => l.type === 'danger').length;
+
+  // ── Map center ──
+  const center = useMemo(() => {
+    try {
+      if (Array.isArray(MAP_DEFAULT_CENTER)) return { lat: MAP_DEFAULT_CENTER[0], lng: MAP_DEFAULT_CENTER[1] };
+    } catch {}
+    return { lat: 33.8938, lng: 35.5018 };
   }, []);
 
-  // ── SOS: broadcast to family + dial 125 ──
   const handleSOSPress = useCallback(() => {
-    // Alert broadcast
-    alert('🚨 SOS ACTIVATED\n\nEmergency services have been notified.\nYour location has been shared with all family circle members.\n\nDialing 125...');
-    // The FloatingHeader will also trigger tel:125
+    alert('🚨 SOS ACTIVATED\n\nEmergency services notified.\nLocation shared with family circle.\n\nDialing 125...');
   }, []);
 
-  // ── Safe Check-in: add check-in + open family circle ──
   const addSafeCheckIn = useCallback(() => {
-    const timestamp = new Date().toISOString();
-    setSafeCheckIns((prev) => [timestamp, ...prev]);
-    // Persist to localStorage
+    const ts = new Date().toISOString();
     try {
       const existing = JSON.parse(localStorage.getItem('guardian_safe_checkins') || '[]');
-      existing.unshift(timestamp);
+      existing.unshift(ts);
       localStorage.setItem('guardian_safe_checkins', JSON.stringify(existing.slice(0, 50)));
-    } catch { /* ignore */ }
+    } catch {}
     setShowFamilyCircle(true);
   }, []);
 
-  // ── Start route to a resource ──
-  const handleStartRoute = useCallback((location: FigmaLocation) => {
-    alert(`🧭 Starting safest route to ${location.name}\n\n• Safety Score: ${location.safetyScore}%\n• Verified by: ${location.verifiedBy} users\n\nFollow the navigation on your map.`);
+  const handleStartRoute = useCallback((location: any) => {
+    alert(`🧭 Route to ${location.name}\n\nSafety: ${location.safetyScore}%\nVerified by: ${location.verifiedBy} users`);
     setSelectedLocation(null);
   }, []);
 
-  // ── Tab change handler ──
   const handleTabChange = useCallback((tab: 'map' | 'alerts' | 'safe' | 'settings') => {
     setActiveTab(tab);
-
-    if (tab === 'map') {
-      // Reset — close all overlays
-      setSelectedLocation(null);
-      setShowFamilyCircle(false);
-    } else if (tab === 'safe') {
-      // Trigger safe check-in + open Family Circle
-      addSafeCheckIn();
-    } else if (tab === 'alerts') {
-      const zones = GUARDIAN_DATA.dangerZones || [];
-      alert(`📢 Active Alerts (${zones.length})\n\n${zones.map((dz: any) => `• ${dz.severity.toUpperCase()}: ${dz.description}`).join('\n')}\n\nVerified risks from the Guardian network.`);
-    } else if (tab === 'settings') {
-      alert('⚙️ Settings\n\n• Emergency contacts\n• Notification preferences\n• Privacy & sharing\n• Language (EN / AR / FR)\n• Light / Dark mode');
+    if (tab === 'map') { setSelectedLocation(null); setShowFamilyCircle(false); }
+    else if (tab === 'safe') { addSafeCheckIn(); }
+    else if (tab === 'alerts') {
+      const dangers = allLocations.filter((l) => l.type === 'danger');
+      alert(`📢 Active Alerts (${dangers.length})\n\n${dangers.map((d) => `• ${d.name}`).join('\n')}`);
     }
-  }, [addSafeCheckIn]);
-
-  // ── Marker click → open HospitalSheet ──
-  const handleLocationSelect = useCallback((location: FigmaLocation) => {
-    setSelectedLocation(location);
-  }, []);
-
-  // ── Default map center ──
-  const center = Array.isArray(MAP_DEFAULT_CENTER)
-    ? { lat: MAP_DEFAULT_CENTER[0], lng: MAP_DEFAULT_CENTER[1] }
-    : { lat: 33.8938, lng: 35.5018 };
+    else if (tab === 'settings') {
+      alert('⚙️ Settings\n\n• Emergency contacts\n• Language (EN / AR / FR)\n• Light / Dark mode');
+    }
+  }, [addSafeCheckIn, allLocations]);
 
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ backgroundColor: '#05070A' }}>
-      {/* 1. TACTICAL LAYER — 113 resources from GUARDIAN_DATA */}
+      {/* 1. MAP — all locations passed as prop */}
       <TacticalMap
         locations={allLocations}
         userLocation={center}
-        onLocationSelect={handleLocationSelect}
+        onLocationSelect={setSelectedLocation}
       />
 
-      {/* 2. FLOATING HEADER — Live battery + SOS → tel:125 */}
+      {/* 2. HEADER */}
       <FloatingHeader
-        batterySaver={batterySaver}
-        batteryLevel={batteryLevel}
+        batterySaver={true}
+        batteryLevel={73}
         onSOSPress={handleSOSPress}
       />
 
-      {/* 3. HOSPITAL SHEET — Opens on marker click with Trust Score */}
+      {/* 3. HOSPITAL SHEET — opens when selectedLocation is set */}
       <HospitalSheet
         location={selectedLocation}
         onClose={() => setSelectedLocation(null)}
         onStartRoute={handleStartRoute}
       />
 
-      {/* 4. FAMILY SAFETY CIRCLE — Opens on "I AM SAFE" */}
+      {/* 4. FAMILY CIRCLE */}
       <FamilySafetyCircle
         isOpen={showFamilyCircle}
         onClose={() => setShowFamilyCircle(false)}
         members={FAMILY_MEMBERS}
       />
 
-      {/* 5. BOTTOM NAVIGATION — Tab logic wired */}
+      {/* 5. BOTTOM NAV */}
       <BottomNavigation
         activeTab={activeTab}
         onTabChange={handleTabChange}
-        alertCount={(GUARDIAN_DATA.dangerZones || []).length}
+        alertCount={dangerCount}
       />
     </div>
   );
