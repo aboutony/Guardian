@@ -3,10 +3,21 @@ import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import { GUARDIAN_DATA, CATEGORY_ICONS, CATEGORY_LABELS, MAP_DEFAULT_CENTER, MAP_DEFAULT_ZOOM, SEVERITY_COLORS } from '../../constants';
 
-// ── Leaflet CSS is loaded via index.html or styles ──
+// ═══════════════════════════════════════════════════════════════
+// MARKER ICON FACTORY
+// ═══════════════════════════════════════════════════════════════
 
-// ── Category → Marker Color ──────────────────────────────────
-const MARKER_COLORS: Record<string, string> = {
+const CATEGORY_EMOJI: Record<string, string> = {
+  hospital: '🏥',
+  bakery: '🍞',
+  pharmacy: '💊',
+  ngo: '🤝',
+  shelter: '🏠',
+  water_point: '💧',
+  fuel_station: '⛽',
+};
+
+const CATEGORY_COLOR: Record<string, string> = {
   hospital: '#00FF95',
   bakery: '#00FF95',
   pharmacy: '#00D1FF',
@@ -16,18 +27,17 @@ const MARKER_COLORS: Record<string, string> = {
   fuel_station: '#00FF95',
 };
 
-// ── Build a glowing DivIcon for each category ─────────────────
-function createMarkerIcon(category: string, emoji: string) {
-  const color = MARKER_COLORS[category] || '#00D1FF';
+function makeIcon(category: string): L.DivIcon {
+  const emoji = CATEGORY_EMOJI[category] || (CATEGORY_ICONS as any)?.[category] || '📍';
+  const color = CATEGORY_COLOR[category] || '#00D1FF';
   return L.divIcon({
     html: `<div style="
-      width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
-      border-radius: 50%;
-      background: ${color}20;
-      border: 2px solid ${color};
-      box-shadow: 0 0 16px ${color}60, 0 0 4px ${color}40;
-      font-size: 16px;
-      transition: transform 0.2s;
+      width:36px;height:36px;display:flex;align-items:center;justify-content:center;
+      border-radius:50%;
+      background:${color}20;
+      border:2px solid ${color};
+      box-shadow:0 0 14px ${color}60,0 0 4px ${color}40;
+      font-size:16px;
     ">${emoji}</div>`,
     className: '',
     iconSize: [36, 36],
@@ -36,15 +46,14 @@ function createMarkerIcon(category: string, emoji: string) {
   });
 }
 
-// ── Danger zone icon ──────────────────────────────────────────
 const DANGER_ICON = L.divIcon({
   html: `<div style="
-    width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
-    border-radius: 50%;
-    background: #FF3B3B20;
-    border: 2px solid #FF3B3B;
-    box-shadow: 0 0 16px #FF3B3B60;
-    font-size: 16px;
+    width:36px;height:36px;display:flex;align-items:center;justify-content:center;
+    border-radius:50%;
+    background:#FF3B3B20;
+    border:2px solid #FF3B3B;
+    box-shadow:0 0 14px #FF3B3B60;
+    font-size:16px;
   ">🚨</div>`,
   className: '',
   iconSize: [36, 36],
@@ -52,24 +61,21 @@ const DANGER_ICON = L.divIcon({
   popupAnchor: [0, -20],
 });
 
-// ── User location icon ────────────────────────────────────────
 const USER_ICON = L.divIcon({
   html: `<div style="
-    width: 20px; height: 20px;
-    border-radius: 50%;
-    background: #00D1FF;
-    border: 3px solid #fff;
-    box-shadow: 0 0 20px #00D1FF80, 0 0 40px #00D1FF40;
+    width:20px;height:20px;border-radius:50%;
+    background:#00D1FF;border:3px solid #fff;
+    box-shadow:0 0 20px #00D1FF80,0 0 40px #00D1FF40;
   "></div>`,
   className: '',
   iconSize: [20, 20],
   iconAnchor: [10, 10],
 });
 
-// ── Dark map tile ─────────────────────────────────────────────
-const DARK_TILE = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+// ═══════════════════════════════════════════════════════════════
+// COMPONENT
+// ═══════════════════════════════════════════════════════════════
 
-// ── Types ─────────────────────────────────────────────────────
 interface TacticalMapProps {
   locations: any[];
   userLocation: { lat: number; lng: number };
@@ -77,40 +83,42 @@ interface TacticalMapProps {
 }
 
 export function TacticalMap({ locations, userLocation, onLocationSelect }: TacticalMapProps) {
-  // ── Flatten GUARDIAN_DATA into renderable arrays ──
-  const resources = useMemo(() => {
-    const all = [
-      ...(GUARDIAN_DATA.hospitals || []),
-      ...(GUARDIAN_DATA.bakeries || []),
-      ...(GUARDIAN_DATA.pharmacies || []),
-      ...(GUARDIAN_DATA.ngos || []),
-      ...(GUARDIAN_DATA.shelters || []),
-      ...(GUARDIAN_DATA.waterPoints || []),
-      ...(GUARDIAN_DATA.fuelStations || []),
-    ];
-    return all.filter((r: any) => r.isOperational);
+  // ── Split locations prop into resources vs dangers ──
+  const resourceMarkers = useMemo(
+    () => locations.filter((l) => l.type !== 'danger'),
+    [locations],
+  );
+  const dangerMarkers = useMemo(
+    () => locations.filter((l) => l.type === 'danger'),
+    [locations],
+  );
+
+  // ── Also pull raw danger zones from GUARDIAN_DATA for Circle overlays ──
+  const rawDangerZones = useMemo(() => {
+    try {
+      return (GUARDIAN_DATA as any).dangerZones || (GUARDIAN_DATA as any).alerts || [];
+    } catch { return []; }
   }, []);
 
-  const dangerZones = useMemo(() => GUARDIAN_DATA.dangerZones || [], []);
-
-  // ── Counts for status bar ──
-  const resourceCount = resources.length;
-  const dangerCount = dangerZones.length;
-
-  // ── CATEGORY_ICONS lookup with fallback ──
-  const getEmoji = (category: string) =>
-    (CATEGORY_ICONS as any)?.[category] || '📍';
+  const resourceCount = resourceMarkers.length;
+  const dangerCount = dangerMarkers.length;
 
   // ── Map center ──
-  const center: [number, number] = Array.isArray(MAP_DEFAULT_CENTER)
-    ? [MAP_DEFAULT_CENTER[0], MAP_DEFAULT_CENTER[1]]
-    : [33.8938, 35.5018];
+  const center: [number, number] = (() => {
+    try {
+      if (Array.isArray(MAP_DEFAULT_CENTER)) return [MAP_DEFAULT_CENTER[0], MAP_DEFAULT_CENTER[1]];
+    } catch {}
+    return [33.8938, 35.5018]; // Beirut fallback
+  })();
 
-  const zoom = typeof MAP_DEFAULT_ZOOM === 'number' ? MAP_DEFAULT_ZOOM : 9;
+  const zoom = (() => {
+    try { return typeof MAP_DEFAULT_ZOOM === 'number' ? MAP_DEFAULT_ZOOM : 9; }
+    catch { return 9; }
+  })();
 
   return (
     <div className="relative w-full h-full">
-      {/* ── LEAFLET MAP CONTAINER ───────────────────────────── */}
+      {/* ═══ LEAFLET MAP ═══ */}
       <MapContainer
         center={center}
         zoom={zoom}
@@ -118,12 +126,13 @@ export function TacticalMap({ locations, userLocation, onLocationSelect }: Tacti
         zoomControl={false}
         attributionControl={false}
       >
+        {/* CartoDB Dark — shows roads and city names */}
         <TileLayer
-          url={DARK_TILE}
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
           maxZoom={19}
         />
 
-        {/* ── USER LOCATION ──────────────────────────────────── */}
+        {/* ── USER LOCATION ── */}
         <Marker position={[userLocation.lat, userLocation.lng]} icon={USER_ICON}>
           <Popup>
             <div style={{ fontFamily: 'Inter, sans-serif', fontSize: '13px', color: '#F1F5F9' }}>
@@ -132,58 +141,53 @@ export function TacticalMap({ locations, userLocation, onLocationSelect }: Tacti
           </Popup>
         </Marker>
 
-        {/* ── 113 RESOURCE MARKERS ───────────────────────────── */}
-        {resources.map((r: any) => {
-          const emoji = getEmoji(r.category);
-          const icon = createMarkerIcon(r.category, emoji);
-          const catLabel = (CATEGORY_LABELS as any)?.[r.category]?.en || r.category;
+        {/* ═══ RESOURCE MARKERS (from locations prop — 113 entries) ═══ */}
+        {resourceMarkers.map((loc) => {
+          const cat = loc.category || loc.type || 'hospital';
+          const emoji = CATEGORY_EMOJI[cat] || (CATEGORY_ICONS as any)?.[cat] || '📍';
+          const catLabel = (CATEGORY_LABELS as any)?.[cat]?.en || cat;
+          const icon = makeIcon(cat);
 
           return (
             <Marker
-              key={r.id}
-              position={[r.lat, r.lng]}
+              key={loc.id}
+              position={[loc.lat, loc.lng]}
               icon={icon}
               eventHandlers={{
-                click: () => {
-                  // Pass adapted location to parent → opens HospitalSheet
-                  onLocationSelect({
-                    id: r.id,
-                    name: r.name,
-                    type: r.category === 'hospital' ? 'hospital' : r.category === 'shelter' || r.category === 'ngo' ? 'shelter' : 'safe-zone',
-                    category: r.category,
-                    lat: r.lat,
-                    lng: r.lng,
-                    safetyScore: r.verificationCount ? Math.min(99, 60 + r.verificationCount * 3) : 80,
-                    verifiedBy: r.verificationCount || 0,
-                    status: r.isOperational ? 'open' : 'closed',
-                    distance: '',
-                    eta: '',
-                    address: r.address || '',
-                    phone: r.phone,
-                    services: [catLabel, r.operatingHours || ''].filter(Boolean),
-                  });
-                },
+                click: () => onLocationSelect(loc),
               }}
             >
               <Popup>
                 <div style={{ fontFamily: 'Inter, sans-serif', fontSize: '13px', maxWidth: '220px' }}>
                   <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px', color: '#F1F5F9' }}>
-                    {emoji} {r.name}
+                    {emoji} {loc.name}
                   </div>
                   <div style={{ color: '#94A3B8', fontSize: '11px', marginBottom: '6px' }}>
-                    {catLabel} · {r.operatingHours || 'Hours N/A'}
+                    {catLabel}
+                    {loc.services && loc.services.length > 1 ? ` · ${loc.services[1]}` : ''}
                   </div>
-                  {r.phone && (
-                    <a href={`tel:${r.phone}`} style={{
+                  {loc.safetyScore != null && (
+                    <div style={{ fontSize: '11px', color: '#00FF95', marginBottom: '4px' }}>
+                      ✅ Safety: {loc.safetyScore}% · Verified by {loc.verifiedBy || 0}
+                    </div>
+                  )}
+                  {loc.phone && (
+                    <a href={`tel:${loc.phone}`} style={{
                       display: 'inline-block', padding: '4px 12px', borderRadius: '8px',
                       fontSize: '11px', fontWeight: 600, background: '#00D1FF', color: '#05070A',
                       textDecoration: 'none', marginRight: '6px',
                     }}>📞 Call</a>
                   )}
-                  {r.address && (
-                    <div style={{ fontSize: '10px', color: '#64748B', marginTop: '6px' }}>
-                      {r.address}
-                    </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onLocationSelect(loc); }}
+                    style={{
+                      display: 'inline-block', padding: '4px 12px', borderRadius: '8px',
+                      fontSize: '11px', fontWeight: 600, background: '#00FF95', color: '#05070A',
+                      border: 'none', cursor: 'pointer',
+                    }}
+                  >🧭 Details</button>
+                  {loc.address && (
+                    <div style={{ fontSize: '10px', color: '#64748B', marginTop: '6px' }}>{loc.address}</div>
                   )}
                 </div>
               </Popup>
@@ -191,60 +195,52 @@ export function TacticalMap({ locations, userLocation, onLocationSelect }: Tacti
           );
         })}
 
-        {/* ── DANGER ZONE CIRCLES + MARKERS ──────────────────── */}
-        {dangerZones.map((dz: any) => {
+        {/* ═══ DANGER MARKERS + CIRCLES ═══ */}
+        {dangerMarkers.map((dz) => (
+          <React.Fragment key={dz.id}>
+            <Marker
+              position={[dz.lat, dz.lng]}
+              icon={DANGER_ICON}
+              eventHandlers={{
+                click: () => onLocationSelect(dz),
+              }}
+            >
+              <Popup>
+                <div style={{ fontFamily: 'Inter, sans-serif', fontSize: '13px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#FF3B3B', marginBottom: '4px' }}>
+                    🚨 DANGER ZONE
+                  </div>
+                  <div style={{ color: '#F1F5F9' }}>{dz.name}</div>
+                  <div style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px' }}>
+                    {dz.distance || 'Active zone'}
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          </React.Fragment>
+        ))}
+
+        {/* ── Raw danger zone circles from GUARDIAN_DATA ── */}
+        {rawDangerZones.map((dz: any) => {
           const sevColor = (SEVERITY_COLORS as any)?.[dz.severity] || '#FF3B3B';
           return (
-            <React.Fragment key={dz.id}>
-              <Circle
-                center={[dz.lat, dz.lng]}
-                radius={dz.radiusKm * 1000}
-                pathOptions={{
-                  color: sevColor,
-                  fillColor: sevColor,
-                  fillOpacity: 0.12,
-                  weight: 2,
-                  dashArray: dz.severity === 'critical' ? undefined : '8 4',
-                }}
-              />
-              <Marker
-                position={[dz.lat, dz.lng]}
-                icon={DANGER_ICON}
-                eventHandlers={{
-                  click: () => {
-                    onLocationSelect({
-                      id: dz.id,
-                      name: dz.description,
-                      type: 'danger',
-                      lat: dz.lat,
-                      lng: dz.lng,
-                      safetyScore: dz.severity === 'critical' ? 10 : dz.severity === 'high' ? 25 : 40,
-                      verifiedBy: 0,
-                      status: 'closed',
-                      distance: `${dz.radiusKm} km radius`,
-                      address: `${dz.severity.toUpperCase()} DANGER ZONE`,
-                    });
-                  },
-                }}
-              >
-                <Popup>
-                  <div style={{ fontFamily: 'Inter, sans-serif', fontSize: '13px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: sevColor, marginBottom: '4px' }}>
-                      🚨 {dz.severity.toUpperCase()} ZONE
-                    </div>
-                    <div style={{ color: '#F1F5F9' }}>{dz.description}</div>
-                    <div style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px' }}>
-                      Radius: {dz.radiusKm} km
-                    </div>
-                  </div>
-                </Popup>
-              </Marker>
-            </React.Fragment>
+            <Circle
+              key={`circle-${dz.id}`}
+              center={[dz.lat, dz.lng]}
+              radius={(dz.radiusKm || 2) * 1000}
+              pathOptions={{
+                color: sevColor,
+                fillColor: sevColor,
+                fillOpacity: 0.12,
+                weight: 2,
+                dashArray: dz.severity === 'critical' ? undefined : '8 4',
+              }}
+            />
           );
         })}
       </MapContainer>
 
-      {/* ── STATUS COUNTER (bottom-left) ─────────────────────── */}
+      {/* ═══ STATUS COUNTER (bottom-left) ═══ */}
       <div className="absolute bottom-24 left-4 z-10">
         <div className="backdrop-blur-xl bg-[#05070A]/80 border border-white/10 rounded-xl px-4 py-2.5 shadow-2xl">
           <div className="flex items-center gap-3">
@@ -261,7 +257,7 @@ export function TacticalMap({ locations, userLocation, onLocationSelect }: Tacti
         </div>
       </div>
 
-      {/* ── DISTANCE SCALE (bottom-right) ────────────────────── */}
+      {/* ═══ DISTANCE SCALE (bottom-right) ═══ */}
       <div className="absolute bottom-24 right-4 z-10">
         <div className="backdrop-blur-xl bg-[#05070A]/80 border border-white/10 rounded-lg px-3 py-2">
           <div className="flex items-center gap-2">
