@@ -11,6 +11,7 @@ import L from 'leaflet';
 import {
   GUARDIAN_DATA,
   THEME,
+  LIGHT_THEME,
   OLED_COLORS,
   SYSTEM_FONT_STACK,
   GPS_INTERVAL_NORMAL,
@@ -21,13 +22,16 @@ import {
   ROUTE_COLORS,
   APP_VERSION,
   DARK_TILE_URL,
+  LIGHT_TILE_URL,
   MAP_DEFAULT_CENTER,
   MAP_DEFAULT_ZOOM,
   getCapacityStatus,
   CAPACITY_RING_COLORS,
+  TRANSLATIONS,
   type GuardianResource,
   type DangerZone,
   type ResourceCategory,
+  type TranslationKey,
 } from './constants';
 import { useSafetyData } from './data/safetyData';
 import LowPowerListView from './components/LowPowerListView';
@@ -123,10 +127,21 @@ export default function App() {
   // ── CORE STATE ──────────────────────────────────────────────────────
   const [isUltraLowPower, setIsUltraLowPower] = useState<boolean>(false);
   const [language, setLanguage] = useState<Language>('en');
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
   const [currentView, setCurrentView] = useState<AppView>('map');
   const [activeCategories, setActiveCategories] = useState<Set<ResourceCategory>>(
     new Set(ALL_CATEGORIES),
   );
+
+  // ── THEME RESOLVER ────────────────────────────────────────────────
+  const th = isDarkMode ? THEME : LIGHT_THEME;
+  const tileUrl = isDarkMode ? DARK_TILE_URL : LIGHT_TILE_URL;
+  const isRtl = language === 'ar';
+
+  // ── TRANSLATION HELPER ────────────────────────────────────────────
+  const t = useCallback((key: TranslationKey): string => {
+    return TRANSLATIONS[language]?.[key] || TRANSLATIONS.en[key] || key;
+  }, [language]);
 
   // ── LOCATION STATE ──────────────────────────────────────────────────
   const [userPosition, setUserPosition] = useState<UserPosition>({
@@ -365,7 +380,7 @@ export default function App() {
           attributionControl={false}
         >
           <TileLayer
-            url={DARK_TILE_URL}
+            url={tileUrl}
             attribution='&copy; <a href="https://carto.com/">CARTO</a>'
             maxZoom={19}
           />
@@ -518,7 +533,7 @@ export default function App() {
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const renderAlerts = () => (
     <div className="alerts-container">
-      <h2 className="section-title">⚠️ Live Alerts ({dangerZones.length + alerts.length})</h2>
+      <h2 className="section-title">⚠️ {t('liveAlerts')} ({dangerZones.length + alerts.length})</h2>
 
       {dangerZones.map((dz) => (
         <div key={dz.id} className="alert-card" style={{ borderLeftColor: SEVERITY_COLORS[dz.severity] }}>
@@ -554,20 +569,31 @@ export default function App() {
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const renderSettings = () => (
     <div className="settings-container">
-      <h2 className="section-title">⚙️ Settings</h2>
+      <h2 className="section-title">⚙️ {t('settings')}</h2>
 
       <div className="setting-row">
         <div>
-          <div className="setting-label">🔋 Battery Saver Mode</div>
-          <div className="setting-desc">Disables map, GPS every 5 min, OLED list view</div>
+          <div className="setting-label">🔋 {t('batterySaver')}</div>
+          <div className="setting-desc">{language === 'ar' ? 'يعطل الخريطة، GPS كل 5 دقائق' : language === 'fr' ? 'Désactive la carte, GPS 5 min' : 'Disables map, GPS every 5 min, OLED list view'}</div>
         </div>
         <button onClick={toggleUltraLowPower} className={`setting-toggle ${isUltraLowPower ? 'toggle-on' : 'toggle-off'}`}>
           {isUltraLowPower ? '● ON' : '○ OFF'}
         </button>
       </div>
 
+      {/* Theme Toggle */}
       <div className="setting-row">
-        <div className="setting-label">🌐 Language</div>
+        <div>
+          <div className="setting-label">{isDarkMode ? '🌙' : '☀️'} {t('theme')}</div>
+          <div className="setting-desc">{isDarkMode ? t('darkMode') : t('lightMode')}</div>
+        </div>
+        <button onClick={() => setIsDarkMode((p) => !p)} className={`setting-toggle ${isDarkMode ? 'toggle-on' : 'toggle-off'}`}>
+          {isDarkMode ? '🌙 Dark' : '☀️ Light'}
+        </button>
+      </div>
+
+      <div className="setting-row">
+        <div className="setting-label">🌐 {t('language')}</div>
         <div style={{ display: 'flex', gap: '6px' }}>
           {(['en', 'ar', 'fr'] as Language[]).map((lang) => (
             <button key={lang} onClick={() => setLanguage(lang)}
@@ -580,42 +606,42 @@ export default function App() {
 
       <div className="setting-row">
         <div>
-          <div className="setting-label">📡 GPS Tracking</div>
+          <div className="setting-label">📡 {t('gpsTracking')}</div>
           <div className="setting-desc">{isUltraLowPower ? 'Polling every 5 min' : 'Continuous high-accuracy'}</div>
         </div>
-        <div style={{ fontSize: '12px', fontWeight: 700, color: THEME.success }}>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: th.success }}>
           {isUltraLowPower ? '5m' : '15s'}
         </div>
       </div>
 
       <div className="setting-row">
-        <div className="setting-label">📍 Loaded Resources</div>
+        <div className="setting-label">📍 {t('loadedResources')}</div>
         <div className="setting-value">{resources.filter((r) => r.isOperational).length} operational</div>
       </div>
 
       <div className="setting-row">
-        <div className="setting-label">⚠️ Active Danger Zones</div>
-        <div className="setting-value" style={{ color: dangerZones.length > 0 ? SEVERITY_COLORS.critical : THEME.success }}>
+        <div className="setting-label">⚠️ {t('activeDangerZones')}</div>
+        <div className="setting-value" style={{ color: dangerZones.length > 0 ? SEVERITY_COLORS.critical : th.success }}>
           {dangerZones.length}
         </div>
       </div>
 
       <div className="setting-row">
-        <div className="setting-label">✅ Community Check-ins</div>
+        <div className="setting-label">✅ {t('communityCheckIns')}</div>
         <div className="setting-value">{safeCheckIns.length} recent</div>
       </div>
 
       {/* Per-category breakdown */}
-      <h3 className="section-subtitle">📊 Resource Breakdown</h3>
+      <h3 className="section-subtitle">📊 {t('resourceBreakdown')}</h3>
       {ALL_CATEGORIES.map((cat) => (
         <div key={cat} className="setting-row">
-          <div className="setting-label">{CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]?.en}</div>
+          <div className="setting-label">{CATEGORY_ICONS[cat]} {t(cat as TranslationKey)}</div>
           <div className="setting-value">{categoryCounts[cat]}</div>
         </div>
       ))}
 
       <div className="settings-footer">
-        Guardian v{APP_VERSION} — Phase 16.1 Universal Resource Injection<br />
+        Guardian v{APP_VERSION} — Phase 16.3 Localization & Theme<br />
         Generated via Antigravity Editor
       </div>
     </div>
@@ -678,23 +704,23 @@ export default function App() {
       <nav className="guardian-nav">
         <button id="nav-map" className={`nav-item ${currentView === 'map' ? 'nav-active' : ''}`}
           onClick={() => setCurrentView('map')}>
-          <span className="nav-icon">🗺️</span><span>Map</span>
+          <span className="nav-icon">🗺️</span><span>{t('map')}</span>
         </button>
 
         <button id="nav-alerts" className={`nav-item ${currentView === 'alerts' ? 'nav-active' : ''}`}
           onClick={() => setCurrentView('alerts')}>
-          <span className="nav-icon">⚠️</span><span>Alerts</span>
+          <span className="nav-icon">⚠️</span><span>{t('alerts')}</span>
           {(dangerZones.length + alerts.length) > 0 && <span className="nav-badge" />}
         </button>
 
         {/* I AM SAFE — CENTER */}
         <button id="nav-safe" className="nav-item nav-safe btn-safe-pulse" onClick={handleSafeCheckIn}>
-          <span className="nav-icon" style={{ fontSize: '22px' }}>✅</span><span>SAFE</span>
+          <span className="nav-icon" style={{ fontSize: '22px' }}>✅</span><span>{t('safe')}</span>
         </button>
 
         <button id="nav-settings" className={`nav-item ${currentView === 'settings' ? 'nav-active' : ''}`}
           onClick={() => setCurrentView('settings')}>
-          <span className="nav-icon">⚙️</span><span>Settings</span>
+          <span className="nav-icon">⚙️</span><span>{t('settings')}</span>
         </button>
       </nav>
 
@@ -703,8 +729,8 @@ export default function App() {
         /* ═══ RESET & BASE ═══ */
         .guardian-app {
           font-family: "Inter", ${SYSTEM_FONT_STACK};
-          background: ${THEME.background};
-          color: ${THEME.text};
+          background: ${th.background};
+          color: ${th.text};
           height: 100dvh;
           display: flex;
           flex-direction: column;
@@ -719,7 +745,7 @@ export default function App() {
           padding: 10px 16px;
           background: rgba(15, 23, 42, 0.92);
           backdrop-filter: blur(12px);
-          border-bottom: 1px solid ${THEME.border};
+          border-bottom: 1px solid ${th.border};
           z-index: 1100;
           flex-shrink: 0;
         }
@@ -731,7 +757,7 @@ export default function App() {
           font-size: 9px; padding: 2px 6px; border-radius: 4px;
           background: ${OLED_COLORS.accent}33; color: ${OLED_COLORS.accent}; font-weight: 700;
         }
-        .header-version { font-size: 11px; color: ${THEME.textMuted}; }
+        .header-version { font-size: 11px; color: ${th.textMuted}; }
 
         /* ═══ MAIN ═══ */
         .guardian-main { flex: 1; position: relative; overflow: hidden; }
@@ -749,7 +775,7 @@ export default function App() {
           transition: all 0.2s ease;
         }
         .chip-active {
-          background: rgba(37, 99, 235, 0.85); border-color: ${THEME.primary}; color: #fff;
+          background: rgba(37, 99, 235, 0.85); border-color: ${th.primary}; color: #fff;
         }
         .chip-inactive {
           background: rgba(15, 23, 42, 0.8); border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.7);
@@ -766,8 +792,8 @@ export default function App() {
           position: absolute; bottom: 12px; left: 12px; z-index: 1000;
           padding: 4px 10px; border-radius: 8px;
           background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px);
-          font-size: 11px; color: ${THEME.textMuted}; font-weight: 600;
-          border: 1px solid ${THEME.border};
+          font-size: 11px; color: ${th.textMuted}; font-weight: 600;
+          border: 1px solid ${th.border};
         }
 
         /* ═══ NAV PANEL ═══ */
@@ -776,11 +802,11 @@ export default function App() {
           background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(12px);
           border-radius: 12px; padding: 12px 16px;
           display: flex; align-items: center; justify-content: space-between;
-          border: 1px solid ${THEME.border}; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+          border: 1px solid ${th.border}; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
         }
         .nav-panel-cancel {
           padding: 6px 16px; border-radius: 8px; border: none;
-          background: ${THEME.danger}; color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+          background: ${th.danger}; color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
         }
 
         /* ═══ POPUP BUTTONS ═══ */
@@ -789,8 +815,8 @@ export default function App() {
           font-size: 11px; font-weight: 600; text-decoration: none;
           margin-right: 6px; border: none; cursor: pointer;
         }
-        .popup-btn-call { background: ${THEME.primary}; color: #fff; }
-        .popup-btn-nav { background: ${THEME.success}; color: #000; }
+        .popup-btn-call { background: ${th.primary}; color: #fff; }
+        .popup-btn-nav { background: ${th.success}; color: #000; }
 
         /* ═══ DANGER BANNER ═══ */
         .danger-banner {
@@ -826,17 +852,17 @@ export default function App() {
         /* ═══ BOTTOM NAV ═══ */
         .guardian-nav {
           display: flex; align-items: stretch;
-          border-top: 1px solid ${THEME.border};
+          border-top: 1px solid ${th.border};
           background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(12px);
           z-index: 1100; flex-shrink: 0;
         }
         .nav-item {
           flex: 1; display: flex; flex-direction: column; align-items: center;
           justify-content: center; padding: 8px 4px; font-size: 10px;
-          font-weight: 500; color: ${THEME.textMuted}; cursor: pointer;
+          font-weight: 500; color: ${th.textMuted}; cursor: pointer;
           border: none; background: none; position: relative; transition: color 0.15s ease;
         }
-        .nav-active { color: ${THEME.primary}; font-weight: 700; }
+        .nav-active { color: ${th.primary}; font-weight: 700; }
         .nav-safe { flex: 1.4; color: #22C55E; font-weight: 800; letter-spacing: 0.5px; }
         .nav-icon { font-size: 20px; margin-bottom: 2px; }
         .nav-badge {
@@ -847,39 +873,39 @@ export default function App() {
         /* ═══ ALERTS ═══ */
         .alerts-container { padding: 16px; overflow-y: auto; height: 100%; }
         .section-title { font-size: 20px; font-weight: 800; margin-bottom: 16px; letter-spacing: -0.3px; }
-        .section-subtitle { font-size: 14px; font-weight: 700; margin: 16px 0 8px; color: ${THEME.textMuted}; }
+        .section-subtitle { font-size: 14px; font-weight: 700; margin: 16px 0 8px; color: ${th.textMuted}; }
         .alert-card {
           padding: 14px; margin-bottom: 10px; border-radius: 10px;
-          background: ${THEME.surface}; border-left: 4px solid;
+          background: ${th.surface}; border-left: 4px solid;
           box-shadow: 0 2px 8px rgba(0,0,0,0.2);
         }
         .alert-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
-        .alert-text { font-size: 12px; color: ${THEME.textMuted}; }
-        .alert-meta { font-size: 10px; color: ${THEME.textMuted}; margin-top: 4px; }
+        .alert-text { font-size: 12px; color: ${th.textMuted}; }
+        .alert-meta { font-size: 10px; color: ${th.textMuted}; margin-top: 4px; }
 
         /* ═══ SETTINGS ═══ */
         .settings-container { padding: 24px 16px; overflow-y: auto; height: 100%; }
         .setting-row {
           display: flex; align-items: center; justify-content: space-between;
-          padding: 14px 0; border-bottom: 1px solid ${THEME.border};
+          padding: 14px 0; border-bottom: 1px solid ${th.border};
         }
         .setting-label { font-size: 14px; font-weight: 600; }
-        .setting-desc { font-size: 12px; color: ${THEME.textMuted}; margin-top: 2px; }
-        .setting-value { font-size: 13px; color: ${THEME.textMuted}; }
+        .setting-desc { font-size: 12px; color: ${th.textMuted}; margin-top: 2px; }
+        .setting-value { font-size: 13px; color: ${th.textMuted}; }
         .setting-toggle {
           padding: 8px 20px; border-radius: 20px; border: none;
           font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s ease;
         }
-        .toggle-on { background: ${THEME.success}; color: #000; }
-        .toggle-off { background: ${THEME.surface}; color: ${THEME.textMuted}; }
+        .toggle-on { background: ${th.success}; color: #000; }
+        .toggle-off { background: ${th.surface}; color: ${th.textMuted}; }
         .lang-btn {
           padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
-          cursor: pointer; border: 1px solid ${THEME.border};
-          background: transparent; color: ${THEME.textMuted}; transition: all 0.15s ease;
+          cursor: pointer; border: 1px solid ${th.border};
+          background: transparent; color: ${th.textMuted}; transition: all 0.15s ease;
         }
-        .lang-active { border-color: ${THEME.primary}; background: ${THEME.primary}33; color: ${THEME.primary}; }
+        .lang-active { border-color: ${th.primary}; background: ${th.primary}33; color: ${th.primary}; }
         .settings-footer {
-          text-align: center; padding: 24px; font-size: 11px; color: ${THEME.textMuted};
+          text-align: center; padding: 24px; font-size: 11px; color: ${th.textMuted};
         }
 
         /* ═══ LEAFLET OVERRIDES ═══ */

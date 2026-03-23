@@ -18,6 +18,7 @@ export const ALERT_POLL_LOW_POWER = 600_000;     // 10 min — low-power alerts
 // 1b. MAP DEFAULTS
 // ---------------------------------------------------------------------------
 export const DARK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+export const LIGHT_TILE_URL = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
 export const MAP_DEFAULT_CENTER: [number, number] = [33.8938, 35.5018];  // Beirut
 export const MAP_DEFAULT_ZOOM = 13;
 
@@ -53,6 +54,20 @@ export const THEME = {
   warning:     '#F59E0B',
   success:     '#22C55E',
   border:      '#334155',
+} as const;
+
+export const LIGHT_THEME = {
+  primary:     '#2563EB',
+  primaryDark: '#1D4ED8',
+  surface:     '#F1F5F9',
+  surfaceAlt:  '#E2E8F0',
+  background:  '#FFFFFF',
+  text:        '#0F172A',
+  textMuted:   '#64748B',
+  danger:      '#DC2626',
+  warning:     '#D97706',
+  success:     '#16A34A',
+  border:      '#CBD5E1',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -344,9 +359,9 @@ export const ROUTE_COLORS = {
 // ---------------------------------------------------------------------------
 // 10. APP META
 // ---------------------------------------------------------------------------
-export const APP_VERSION = '16.2.0';
-export const APP_CODENAME = 'Trust & Dynamic Capacity';
-export const PHASE = 16.2;
+export const APP_VERSION = '16.3.0';
+export const APP_CODENAME = 'Localization & Theme Engine';
+export const PHASE = 16.3;
 
 // ---------------------------------------------------------------------------
 // 11. CAPACITY STATUS THRESHOLDS
@@ -372,4 +387,84 @@ export const CAPACITY_RING_COLORS: Record<string, string> = {
   limited: '#F59E0B',
   full: '#EF4444',
   unknown: '#6B7280',
+};
+
+// ---------------------------------------------------------------------------
+// 12. TRANSLATION DICTIONARY — EN / AR / FR
+// ---------------------------------------------------------------------------
+export type TranslationKey =
+  | 'appName' | 'map' | 'alerts' | 'safe' | 'settings'
+  | 'hospital' | 'bakery' | 'pharmacy' | 'ngo' | 'shelter' | 'water' | 'fuel'
+  | 'confirm' | 'dispute' | 'iAmSafe' | 'sos' | 'navigate' | 'call'
+  | 'liveAlerts' | 'dangerZone' | 'batterySaver' | 'language' | 'theme'
+  | 'darkMode' | 'lightMode' | 'gpsTracking' | 'loadedResources'
+  | 'activeDangerZones' | 'communityCheckIns' | 'resourceBreakdown'
+  | 'open' | 'limited' | 'full' | 'unknown' | 'disputed' | 'verifiedBy'
+  | 'yourLocation' | 'accuracy' | 'cancel' | 'safestRoute'
+  | 'dangerBanner' | 'checkInSent' | 'operatingHours';
+
+export const TRANSLATIONS: Record<string, Record<TranslationKey, string>> = {
+  en: {
+    appName: 'GUARDIAN',
+    map: 'Map', alerts: 'Alerts', safe: 'SAFE', settings: 'Settings',
+    hospital: 'Hospital', bakery: 'Bakery', pharmacy: 'Pharmacy',
+    ngo: 'NGO Center', shelter: 'Shelter', water: 'Water Point', fuel: 'Fuel Station',
+    confirm: 'Confirm', dispute: 'Dispute', iAmSafe: 'I AM SAFE', sos: 'SOS',
+    navigate: 'Navigate', call: 'Call',
+    liveAlerts: 'Live Alerts', dangerZone: 'DANGER ZONE',
+    batterySaver: 'Battery Saver Mode', language: 'Language', theme: 'Theme',
+    darkMode: 'Dark Mode', lightMode: 'Light Mode',
+    gpsTracking: 'GPS Tracking', loadedResources: 'Loaded Resources',
+    activeDangerZones: 'Active Danger Zones', communityCheckIns: 'Community Check-ins',
+    resourceBreakdown: 'Resource Breakdown',
+    open: 'Open', limited: 'Limited', full: 'Full', unknown: 'Unknown',
+    disputed: 'Disputed', verifiedBy: 'Verified by',
+    yourLocation: 'Your Location', accuracy: 'Accuracy',
+    cancel: 'Cancel', safestRoute: 'Safest Route',
+    dangerBanner: 'DANGER — You are inside an active zone!',
+    checkInSent: 'Check-in sent! Stay safe.',
+    operatingHours: 'Hours',
+  },
+  ar: {
+    appName: 'الحارس',
+    map: 'خريطة', alerts: 'تنبيهات', safe: 'آمن', settings: 'إعدادات',
+    hospital: 'مستشفى', bakery: 'مخبز', pharmacy: 'صيدلية',
+    ngo: 'مركز إغاثة', shelter: 'مأوى', water: 'نقطة مياه', fuel: 'محطة وقود',
+    confirm: 'تأكيد', dispute: 'اعتراض', iAmSafe: 'أنا بأمان', sos: 'طوارئ',
+    navigate: 'اتجاهات', call: 'اتصل',
+    liveAlerts: 'تنبيهات مباشرة', dangerZone: 'منطقة خطرة',
+    batterySaver: 'وضع توفير الطاقة', language: 'اللغة', theme: 'المظهر',
+    darkMode: 'الوضع الداكن', lightMode: 'الوضع الفاتح',
+    gpsTracking: 'تتبع GPS', loadedResources: 'الموارد المحملة',
+    activeDangerZones: 'مناطق الخطر النشطة', communityCheckIns: 'تسجيلات المجتمع',
+    resourceBreakdown: 'تفاصيل الموارد',
+    open: 'مفتوح', limited: 'محدود', full: 'ممتلئ', unknown: 'غير معروف',
+    disputed: 'متنازع عليه', verifiedBy: 'تم التحقق من',
+    yourLocation: 'موقعك', accuracy: 'الدقة',
+    cancel: 'إلغاء', safestRoute: 'أسلم طريق',
+    dangerBanner: 'خطر — أنت داخل منطقة نشطة!',
+    checkInSent: 'تم تسجيل الوصول! ابقَ آمناً.',
+    operatingHours: 'الأوقات',
+  },
+  fr: {
+    appName: 'GUARDIAN',
+    map: 'Carte', alerts: 'Alertes', safe: 'SÛR', settings: 'Paramètres',
+    hospital: 'Hôpital', bakery: 'Boulangerie', pharmacy: 'Pharmacie',
+    ngo: 'Centre ONG', shelter: 'Abri', water: "Point d'eau", fuel: 'Station essence',
+    confirm: 'Confirmer', dispute: 'Contester', iAmSafe: 'JE SUIS EN SÉCURITÉ', sos: 'SOS',
+    navigate: 'Naviguer', call: 'Appeler',
+    liveAlerts: 'Alertes en direct', dangerZone: 'ZONE DANGEREUSE',
+    batterySaver: 'Mode économie', language: 'Langue', theme: 'Thème',
+    darkMode: 'Mode sombre', lightMode: 'Mode clair',
+    gpsTracking: 'Suivi GPS', loadedResources: 'Ressources chargées',
+    activeDangerZones: 'Zones de danger actives', communityCheckIns: 'Signalements communautaires',
+    resourceBreakdown: 'Répartition des ressources',
+    open: 'Ouvert', limited: 'Limité', full: 'Complet', unknown: 'Inconnu',
+    disputed: 'Contesté', verifiedBy: 'Vérifié par',
+    yourLocation: 'Votre position', accuracy: 'Précision',
+    cancel: 'Annuler', safestRoute: 'Itinéraire le plus sûr',
+    dangerBanner: 'DANGER — Vous êtes dans une zone active !',
+    checkInSent: 'Signalement envoyé ! Restez en sécurité.',
+    operatingHours: 'Horaires',
+  },
 };
