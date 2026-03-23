@@ -1,0 +1,50 @@
+/* ═══════════════════════════════════════════════════════════════════ */
+/* Guardian — theme.css                                               */
+/* Vanguard V1.1: CSS Custom Properties for Glassmorphism             */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Dark Theme (Default) ── */
+  --g-bg: #0F172A;
+  --g-surface: #1E293B;
+  --g-surface-alt: #0F172A;
+  --g-text: #F1F5F9;
+  --g-text-muted: #94A3B8;
+  --g-border: #334155;
+  --g-primary: #2563EB;
+  --g-primary-dark: #1E40AF;
+  --g-danger: #EF4444;
+  --g-warning: #F59E0B;
+  --g-success: #22C55E;
+
+  /* ── Glassmorphism tokens ── */
+  --g-glass-bg: rgba(15, 23, 42, 0.75);
+  --g-glass-border: rgba(255, 255, 255, 0.08);
+  --g-glass-blur: 16px;
+  --g-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+
+  /* ── Spacing scale ── */
+  --g-radius-sm: 8px;
+  --g-radius-md: 12px;
+  --g-radius-lg: 20px;
+  --g-radius-xl: 28px;
+}
+
+/* ── Light Theme Override ── */
+[data-theme="light"] {
+  --g-bg: #FFFFFF;
+  --g-surface: #F1F5F9;
+  --g-surface-alt: #E2E8F0;
+  --g-text: #0F172A;
+  --g-text-muted: #64748B;
+  --g-border: #CBD5E1;
+  --g-primary: #2563EB;
+  --g-primary-dark: #1D4ED8;
+  --g-danger: #DC2626;
+  --g-warning: #D97706;
+  --g-success: #16A34A;
+
+  --g-glass-bg: rgba(255, 255, 255, 0.75);
+  --g-glass-border: rgba(0, 0, 0, 0.08);
+  --g-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
