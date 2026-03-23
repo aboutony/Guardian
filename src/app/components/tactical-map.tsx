@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { MapPin, Navigation, Shield, AlertTriangle, Heart, Building2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { MapPin, Navigation, Shield, AlertTriangle, Heart, Building2, Droplets, Fuel, Pill, UtensilsCrossed } from 'lucide-react';
+import { GUARDIAN_DATA, CATEGORY_ICONS, CATEGORY_LABELS } from '../../constants';
 
+// ── Types ──────────────────────────────────────────────────────
 interface Location {
   id: string;
   name: string;
@@ -13,45 +15,70 @@ interface Location {
 }
 
 interface TacticalMapProps {
-  onLocationSelect: (location: Location) => void;
-  locations: Location[];
+  onLocationSelect: (location: any) => void;
+  locations: any[];
   userLocation: { lat: number; lng: number };
+}
+
+// ── Dynamic grid layout: distribute 113 markers across the viewport ──
+function distributeMarkers(locations: any[], width: number, height: number) {
+  const cols = Math.ceil(Math.sqrt(locations.length * (width / height)));
+  const rows = Math.ceil(locations.length / cols);
+  const cellW = width / (cols + 1);
+  const cellH = height / (rows + 1);
+
+  return locations.map((loc, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    // Add jitter for organic feel
+    const jitterX = ((loc.lat * 1000) % 20) - 10;
+    const jitterY = ((loc.lng * 1000) % 20) - 10;
+    return {
+      ...loc,
+      x: ((col + 1) * cellW / width) * 100 + jitterX * 0.3,
+      y: ((row + 1) * cellH / height) * 100 + jitterY * 0.3,
+    };
+  });
 }
 
 export function TacticalMap({ onLocationSelect, locations, userLocation }: TacticalMapProps) {
   const [mapCenter] = useState({ x: 50, y: 50 });
   
-  const getMarkerColor = (type: Location['type']) => {
+  // ── Spread markers across the canvas ──
+  const positioned = useMemo(
+    () => distributeMarkers(locations, 100, 100),
+    [locations],
+  );
+
+  // ── Resource counter ──
+  const resourceCount = locations.filter((l) => l.type !== 'danger').length;
+  const dangerCount = locations.filter((l) => l.type === 'danger').length;
+
+  const getMarkerColor = (type: string) => {
     switch (type) {
-      case 'hospital':
-        return '#00FF95';
-      case 'shelter':
-        return '#00D1FF';
-      case 'police':
-        return '#00D1FF';
-      case 'danger':
-        return '#FF3B3B';
-      case 'safe-zone':
-        return '#00FF95';
-      default:
-        return '#00D1FF';
+      case 'hospital': return '#00FF95';
+      case 'shelter':  return '#00D1FF';
+      case 'police':   return '#00D1FF';
+      case 'danger':   return '#FF3B3B';
+      case 'safe-zone': return '#00FF95';
+      default:         return '#00D1FF';
     }
   };
 
-  const getMarkerIcon = (type: Location['type']) => {
+  const getMarkerIcon = (type: string, category?: string) => {
+    // Use category for more specific icons
+    if (category === 'pharmacy') return <Pill className="w-4 h-4" />;
+    if (category === 'bakery') return <UtensilsCrossed className="w-4 h-4" />;
+    if (category === 'water_point') return <Droplets className="w-4 h-4" />;
+    if (category === 'fuel_station') return <Fuel className="w-4 h-4" />;
+    
     switch (type) {
-      case 'hospital':
-        return <Heart className="w-4 h-4" />;
-      case 'shelter':
-        return <Building2 className="w-4 h-4" />;
-      case 'police':
-        return <Shield className="w-4 h-4" />;
-      case 'danger':
-        return <AlertTriangle className="w-4 h-4" />;
-      case 'safe-zone':
-        return <Shield className="w-4 h-4" />;
-      default:
-        return <MapPin className="w-4 h-4" />;
+      case 'hospital':  return <Heart className="w-4 h-4" />;
+      case 'shelter':   return <Building2 className="w-4 h-4" />;
+      case 'police':    return <Shield className="w-4 h-4" />;
+      case 'danger':    return <AlertTriangle className="w-4 h-4" />;
+      case 'safe-zone': return <Shield className="w-4 h-4" />;
+      default:          return <MapPin className="w-4 h-4" />;
     }
   };
 
@@ -100,62 +127,75 @@ export function TacticalMap({ onLocationSelect, locations, userLocation }: Tacti
         </div>
       </div>
 
-      {/* Location Markers */}
-      {locations.map((location, index) => {
-        const offsetX = (index % 3 - 1) * 25 + 50;
-        const offsetY = Math.floor(index / 3) * 20 + 30;
-        
-        return (
-          <button
-            key={location.id}
-            onClick={() => onLocationSelect(location)}
-            className="absolute group transition-all duration-200 hover:scale-110 active:scale-95"
-            style={{
-              left: `${offsetX}%`,
-              top: `${offsetY}%`,
+      {/* ── 113 Resource + Danger Markers ─────────────────────── */}
+      {positioned.map((location) => (
+        <button
+          key={location.id}
+          onClick={() => onLocationSelect(location)}
+          className="absolute group transition-all duration-200 hover:scale-110 active:scale-95"
+          style={{
+            left: `${Math.max(5, Math.min(95, location.x))}%`,
+            top: `${Math.max(8, Math.min(85, location.y))}%`,
+            transform: 'translate(-50%, -50%)',
+          }}
+        >
+          {/* Glow effect */}
+          <div 
+            className="absolute inset-0 blur-xl opacity-60 group-hover:opacity-100 transition-opacity"
+            style={{ 
+              backgroundColor: getMarkerColor(location.type),
+              width: '32px',
+              height: '32px',
+              left: '50%',
+              top: '50%',
               transform: 'translate(-50%, -50%)',
             }}
+          />
+          
+          {/* Marker */}
+          <div
+            className="relative w-10 h-10 rounded-full flex items-center justify-center
+                     backdrop-blur-md border transition-all"
+            style={{
+              backgroundColor: `${getMarkerColor(location.type)}20`,
+              borderColor: getMarkerColor(location.type),
+              boxShadow: `0 0 20px ${getMarkerColor(location.type)}40`,
+            }}
           >
-            {/* Glow effect */}
-            <div 
-              className="absolute inset-0 blur-xl opacity-60 group-hover:opacity-100 transition-opacity"
-              style={{ 
-                backgroundColor: getMarkerColor(location.type),
-                width: '32px',
-                height: '32px',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-              }}
-            />
-            
-            {/* Marker */}
-            <div
-              className="relative w-12 h-12 rounded-full flex items-center justify-center
-                       backdrop-blur-md border transition-all"
-              style={{
-                backgroundColor: `${getMarkerColor(location.type)}20`,
-                borderColor: getMarkerColor(location.type),
-                boxShadow: `0 0 20px ${getMarkerColor(location.type)}40`,
-              }}
-            >
-              <div style={{ color: getMarkerColor(location.type) }}>
-                {getMarkerIcon(location.type)}
-              </div>
+            <div style={{ color: getMarkerColor(location.type) }}>
+              {getMarkerIcon(location.type, location.category)}
             </div>
+          </div>
 
-            {/* Label on hover */}
-            <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              <div className="px-3 py-1 rounded-lg backdrop-blur-xl bg-white/10 border border-white/20">
-                <span className="text-xs text-white">{location.name}</span>
-              </div>
+          {/* Label on hover */}
+          <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            <div className="px-3 py-1 rounded-lg backdrop-blur-xl bg-white/10 border border-white/20">
+              <span className="text-xs text-white">{location.name}</span>
             </div>
-          </button>
-        );
-      })}
+          </div>
+        </button>
+      ))}
+
+      {/* ── Resource Counter (bottom-left) ─────────────────────── */}
+      <div className="absolute bottom-24 left-4">
+        <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-[#00FF95]" />
+              <span className="text-xs text-white/80 font-semibold">{resourceCount} Resources</span>
+            </div>
+            {dangerCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-[#FF3B3B]" />
+                <span className="text-xs text-[#FF3B3B]/80 font-semibold">{dangerCount} Danger Zones</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Distance scale */}
-      <div className="absolute bottom-24 left-4">
+      <div className="absolute bottom-24 right-4">
         <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-lg px-3 py-2">
           <div className="flex items-center gap-2">
             <div className="w-16 h-0.5 bg-[#00D1FF]" />

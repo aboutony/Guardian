@@ -1,5 +1,5 @@
-import React from 'react';
-import { AlertCircle, Battery } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { AlertCircle, Battery, BatteryLow, BatteryMedium, BatteryFull } from 'lucide-react';
 
 interface FloatingHeaderProps {
   batterySaver: boolean;
@@ -7,7 +7,39 @@ interface FloatingHeaderProps {
   onSOSPress: () => void;
 }
 
-export function FloatingHeader({ batterySaver, batteryLevel, onSOSPress }: FloatingHeaderProps) {
+export function FloatingHeader({ batterySaver, batteryLevel: fallbackLevel, onSOSPress }: FloatingHeaderProps) {
+  const [battery, setBattery] = useState(fallbackLevel);
+
+  // ── Wire to navigator.getBattery() API ──
+  useEffect(() => {
+    let batteryObj: any = null;
+    const updateBattery = (b: any) => setBattery(Math.round(b.level * 100));
+
+    if ('getBattery' in navigator) {
+      (navigator as any).getBattery().then((b: any) => {
+        batteryObj = b;
+        updateBattery(b);
+        b.addEventListener('levelchange', () => updateBattery(b));
+      }).catch(() => { /* fallback to prop */ });
+    }
+
+    return () => {
+      if (batteryObj) {
+        batteryObj.removeEventListener('levelchange', () => {});
+      }
+    };
+  }, []);
+
+  const BatteryIcon = battery < 20 ? BatteryLow : battery < 60 ? BatteryMedium : BatteryFull;
+  const batteryColor = battery < 20 ? '#FF3B3B' : '#00FF95';
+
+  // ── SOS → dial 125 ──
+  const handleSOS = () => {
+    onSOSPress();
+    // Trigger emergency call
+    window.location.href = 'tel:125';
+  };
+
   return (
     <div className="absolute top-0 left-0 right-0 z-30 p-4 pointer-events-none">
       <div className="max-w-md mx-auto">
@@ -24,19 +56,17 @@ export function FloatingHeader({ batterySaver, batteryLevel, onSOSPress }: Float
 
           {/* Status Indicators */}
           <div className="flex items-center gap-2">
-            {/* Battery Saver */}
-            {batterySaver && (
-              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl px-3 py-2 shadow-2xl">
-                <div className="flex items-center gap-1.5">
-                  <Battery className="w-4 h-4 text-[#00FF95]" />
-                  <span className="text-xs text-white/80">{batteryLevel}%</span>
-                </div>
+            {/* Battery — Live from API */}
+            <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl px-3 py-2 shadow-2xl">
+              <div className="flex items-center gap-1.5">
+                <BatteryIcon className="w-4 h-4" style={{ color: batteryColor }} />
+                <span className="text-xs text-white/80">{battery}%</span>
               </div>
-            )}
+            </div>
 
-            {/* SOS Button */}
+            {/* SOS Button → tel:125 */}
             <button
-              onClick={onSOSPress}
+              onClick={handleSOS}
               className="backdrop-blur-xl bg-[#FF3B3B]/20 border-2 border-[#FF3B3B] rounded-xl px-4 py-2 
                        hover:bg-[#FF3B3B]/30 active:scale-95 transition-all shadow-2xl
                        hover:shadow-[0_0_30px_rgba(255,59,59,0.5)]"

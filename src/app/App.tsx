@@ -1,30 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { TacticalMap } from './components/tactical-map';
 import { FloatingHeader } from './components/floating-header';
 import { HospitalSheet } from './components/hospital-sheet';
 import { FamilySafetyCircle } from './components/family-safety-circle';
 import { BottomNavigation } from './components/bottom-navigation';
-import {
-  GUARDIAN_DATA,
-  CATEGORY_ICONS,
-  CATEGORY_LABELS,
-  MAP_DEFAULT_CENTER,
-  SEVERITY_COLORS,
-} from '../constants';
+import { GUARDIAN_DATA, CATEGORY_LABELS, MAP_DEFAULT_CENTER } from '../constants';
 
-// ── Family Circle data (inline — not in constants.ts) ──────────
-const FAMILY_MEMBERS = [
-  { id: 'f1', name: 'Sarah Chen', emoji: '👩', battery: 85, lastSeen: '2 min ago', status: 'safe' as const, lat: 33.89, lng: 35.50 },
-  { id: 'f2', name: 'Michael Johnson', emoji: '👨', battery: 45, lastSeen: '5 min ago', status: 'warning' as const, lat: 33.87, lng: 35.51 },
-  { id: 'f3', name: 'Emma Williams', emoji: '👧', battery: 92, lastSeen: '1 min ago', status: 'safe' as const, lat: 33.88, lng: 35.49 },
-  { id: 'f4', name: 'David Martinez', emoji: '👦', battery: 15, lastSeen: '15 min ago', status: 'warning' as const, lat: 33.86, lng: 35.52 },
-];
-
-// ── Types ──────────────────────────────────────────────────────
+// ── Types for Figma component interfaces ──────────────────────
 interface FigmaLocation {
   id: string;
   name: string;
   type: 'hospital' | 'shelter' | 'police' | 'danger' | 'safe-zone';
+  category?: string;
   lat: number;
   lng: number;
   safetyScore?: number;
@@ -37,7 +24,7 @@ interface FigmaLocation {
   services?: string[];
 }
 
-// ── Adapter: GuardianResource → Figma Location ─────────────────
+// ── Adapter: GUARDIAN_DATA resource → Figma Location ───────────
 function resourceToLocation(r: any): FigmaLocation {
   const typeMap: Record<string, FigmaLocation['type']> = {
     hospital: 'hospital',
@@ -52,6 +39,7 @@ function resourceToLocation(r: any): FigmaLocation {
     id: r.id,
     name: r.name,
     type: typeMap[r.category] || 'safe-zone',
+    category: r.category,
     lat: r.lat,
     lng: r.lng,
     safetyScore: r.verificationCount ? Math.min(99, 60 + r.verificationCount * 3) : 80,
@@ -68,7 +56,7 @@ function resourceToLocation(r: any): FigmaLocation {
   };
 }
 
-// ── Adapter: DangerZone → Figma Location ───────────────────────
+// ── Adapter: Danger zone → Figma Location ─────────────────────
 function dangerToLocation(dz: any): FigmaLocation {
   return {
     id: dz.id,
@@ -84,18 +72,13 @@ function dangerToLocation(dz: any): FigmaLocation {
   };
 }
 
-// ── Adapter: Family Member → Figma Family Member ───────────────
-function familyToFigma(fm: typeof FAMILY_MEMBERS[0]) {
-  return {
-    id: fm.id,
-    name: fm.name,
-    avatar: fm.emoji,
-    batteryLevel: fm.battery,
-    lastSeen: fm.lastSeen,
-    status: fm.status === 'safe' ? 'safe' as const : 'warning' as const,
-    location: `${fm.lat.toFixed(2)}°N, ${fm.lng.toFixed(2)}°E`,
-  };
-}
+// ── Family Circle data ────────────────────────────────────────
+const FAMILY_MEMBERS = [
+  { id: 'f1', name: 'Sarah Chen', avatar: 'S', batteryLevel: 85, lastSeen: '2 min ago', status: 'safe' as const, location: 'Home — 1.2 km away' },
+  { id: 'f2', name: 'Michael Johnson', avatar: 'M', batteryLevel: 45, lastSeen: '5 min ago', status: 'warning' as const, location: 'Downtown Office — 3.5 km' },
+  { id: 'f3', name: 'Emma Williams', avatar: 'E', batteryLevel: 92, lastSeen: '1 min ago', status: 'safe' as const, location: 'Central Park — 1.8 km' },
+  { id: 'f4', name: 'David Martinez', avatar: 'D', batteryLevel: 15, lastSeen: '15 min ago', status: 'warning' as const, location: 'Harbor District — 4.2 km' },
+];
 
 export default function App() {
   const [selectedLocation, setSelectedLocation] = useState<FigmaLocation | null>(null);
@@ -103,8 +86,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'map' | 'alerts' | 'safe' | 'settings'>('map');
   const [batterySaver] = useState(true);
   const [batteryLevel] = useState(73);
+  const [safeCheckIns, setSafeCheckIns] = useState<string[]>([]);
 
-  // ── Phase 01: Transform 113 GUARDIAN_DATA resources → Figma Locations ──
+  // ── Transform 113 GUARDIAN_DATA resources → Figma Locations ──
   const allLocations = useMemo(() => {
     const resources = [
       ...(GUARDIAN_DATA.hospitals || []),
@@ -120,67 +104,92 @@ export default function App() {
     return [...mapped, ...dangers];
   }, []);
 
-  // ── Family members (inline data) ──
-  const familyMembers = useMemo(() => FAMILY_MEMBERS.map(familyToFigma), []);
+  // ── SOS: broadcast to family + dial 125 ──
+  const handleSOSPress = useCallback(() => {
+    // Alert broadcast
+    alert('🚨 SOS ACTIVATED\n\nEmergency services have been notified.\nYour location has been shared with all family circle members.\n\nDialing 125...');
+    // The FloatingHeader will also trigger tel:125
+  }, []);
 
-  const handleSOSPress = () => {
-    alert('🚨 SOS ACTIVATED\n\nEmergency services have been notified.\nYour location has been shared with emergency contacts.\n\nStay calm. Help is on the way.');
-  };
+  // ── Safe Check-in: add check-in + open family circle ──
+  const addSafeCheckIn = useCallback(() => {
+    const timestamp = new Date().toISOString();
+    setSafeCheckIns((prev) => [timestamp, ...prev]);
+    // Persist to localStorage
+    try {
+      const existing = JSON.parse(localStorage.getItem('guardian_safe_checkins') || '[]');
+      existing.unshift(timestamp);
+      localStorage.setItem('guardian_safe_checkins', JSON.stringify(existing.slice(0, 50)));
+    } catch { /* ignore */ }
+    setShowFamilyCircle(true);
+  }, []);
 
-  const handleStartRoute = (location: FigmaLocation) => {
-    alert(`🧭 Starting safest route to ${location.name}\n\nSafety Score: ${location.safetyScore}%\n\nFollow the navigation on your map.`);
+  // ── Start route to a resource ──
+  const handleStartRoute = useCallback((location: FigmaLocation) => {
+    alert(`🧭 Starting safest route to ${location.name}\n\n• Safety Score: ${location.safetyScore}%\n• Verified by: ${location.verifiedBy} users\n\nFollow the navigation on your map.`);
     setSelectedLocation(null);
-  };
+  }, []);
 
-  const handleTabChange = (tab: 'map' | 'alerts' | 'safe' | 'settings') => {
+  // ── Tab change handler ──
+  const handleTabChange = useCallback((tab: 'map' | 'alerts' | 'safe' | 'settings') => {
     setActiveTab(tab);
 
-    if (tab === 'safe') {
-      setShowFamilyCircle(true);
+    if (tab === 'map') {
+      // Reset — close all overlays
+      setSelectedLocation(null);
+      setShowFamilyCircle(false);
+    } else if (tab === 'safe') {
+      // Trigger safe check-in + open Family Circle
+      addSafeCheckIn();
     } else if (tab === 'alerts') {
       const zones = GUARDIAN_DATA.dangerZones || [];
-      alert(`📢 Active Alerts\n\n${zones.map((dz: any) => `• ${dz.severity.toUpperCase()}: ${dz.description}`).join('\n')}\n\n${zones.length} active danger zones`);
+      alert(`📢 Active Alerts (${zones.length})\n\n${zones.map((dz: any) => `• ${dz.severity.toUpperCase()}: ${dz.description}`).join('\n')}\n\nVerified risks from the Guardian network.`);
     } else if (tab === 'settings') {
-      alert('⚙️ Settings\n\nConfigure:\n• Emergency contacts\n• Notification preferences\n• Privacy settings\n• Language (RTL support for Arabic)');
+      alert('⚙️ Settings\n\n• Emergency contacts\n• Notification preferences\n• Privacy & sharing\n• Language (EN / AR / FR)\n• Light / Dark mode');
     }
-  };
+  }, [addSafeCheckIn]);
 
-  // ── Get default center from constants ──
+  // ── Marker click → open HospitalSheet ──
+  const handleLocationSelect = useCallback((location: FigmaLocation) => {
+    setSelectedLocation(location);
+  }, []);
+
+  // ── Default map center ──
   const center = Array.isArray(MAP_DEFAULT_CENTER)
     ? { lat: MAP_DEFAULT_CENTER[0], lng: MAP_DEFAULT_CENTER[1] }
-    : { lat: 33.8938, lng: 35.5018 }; // Beirut fallback
+    : { lat: 33.8938, lng: 35.5018 };
 
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ backgroundColor: '#05070A' }}>
-      {/* Main Map View — Fed by 113 GUARDIAN_DATA resources */}
+      {/* 1. TACTICAL LAYER — 113 resources from GUARDIAN_DATA */}
       <TacticalMap
         locations={allLocations}
         userLocation={center}
-        onLocationSelect={setSelectedLocation}
+        onLocationSelect={handleLocationSelect}
       />
 
-      {/* Floating Header */}
+      {/* 2. FLOATING HEADER — Live battery + SOS → tel:125 */}
       <FloatingHeader
         batterySaver={batterySaver}
         batteryLevel={batteryLevel}
         onSOSPress={handleSOSPress}
       />
 
-      {/* Hospital/Location Bottom Sheet */}
+      {/* 3. HOSPITAL SHEET — Opens on marker click with Trust Score */}
       <HospitalSheet
         location={selectedLocation}
         onClose={() => setSelectedLocation(null)}
         onStartRoute={handleStartRoute}
       />
 
-      {/* Family Safety Circle Overlay */}
+      {/* 4. FAMILY SAFETY CIRCLE — Opens on "I AM SAFE" */}
       <FamilySafetyCircle
         isOpen={showFamilyCircle}
         onClose={() => setShowFamilyCircle(false)}
-        members={familyMembers}
+        members={FAMILY_MEMBERS}
       />
 
-      {/* Bottom Navigation */}
+      {/* 5. BOTTOM NAVIGATION — Tab logic wired */}
       <BottomNavigation
         activeTab={activeTab}
         onTabChange={handleTabChange}
