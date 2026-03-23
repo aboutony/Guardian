@@ -1,6 +1,7 @@
 // ============================================================================
 // Guardian — App.tsx
-// Phase 16.1: Map-Centric Visual Recovery (Phase 14 Architecture Restored)
+// Phase 16.1 → Restoration Phase 01: Universal Resource Injection
+// Mobile-First Responsive + 7-Layer Category Binding
 // Generated via Antigravity Editor
 // ============================================================================
 
@@ -50,15 +51,15 @@ interface UserPosition {
 }
 
 // ---------------------------------------------------------------------------
-// LEAFLET CUSTOM ICONS — Emoji-based DivIcons per category
+// LEAFLET CUSTOM ICONS — Emoji DivIcons per category
 // ---------------------------------------------------------------------------
 function createCategoryIcon(category: ResourceCategory): L.DivIcon {
   const emoji = CATEGORY_ICONS[category] || '📍';
   return L.divIcon({
     html: `<div style="
-      font-size: 24px;
-      width: 36px;
-      height: 36px;
+      font-size: 20px;
+      width: 32px;
+      height: 32px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -68,24 +69,24 @@ function createCategoryIcon(category: ResourceCategory): L.DivIcon {
       box-shadow: 0 2px 8px rgba(0,0,0,0.5);
     ">${emoji}</div>`,
     className: 'guardian-marker',
-    iconSize: [36, 36],
-    iconAnchor: [18, 18],
-    popupAnchor: [0, -20],
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -18],
   });
 }
 
 const userIcon = L.divIcon({
   html: `<div style="
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     background: #3B82F6;
     border: 3px solid #fff;
     border-radius: 50%;
     box-shadow: 0 0 12px rgba(59, 130, 246, 0.6);
   "></div>`,
   className: 'guardian-user-marker',
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
 });
 
 // ---------------------------------------------------------------------------
@@ -104,7 +105,7 @@ function MapRecenter({ lat, lng }: { lat: number; lng: number }) {
 }
 
 // ---------------------------------------------------------------------------
-// CATEGORY FILTER CHIPS — toggle which marker layers are visible
+// ALL 7 CATEGORIES
 // ---------------------------------------------------------------------------
 const ALL_CATEGORIES: ResourceCategory[] = [
   'hospital', 'bakery', 'pharmacy', 'ngo', 'shelter', 'water', 'fuel',
@@ -138,15 +139,21 @@ export default function App() {
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
   const [safeConfirm, setSafeConfirm] = useState<string | null>(null);
 
-  // ── SAFETY DATA HOOK (alerts, check-ins, services) ─────────────────
+  // ── SAFETY DATA HOOK ───────────────────────────────────────────────
   const { alerts, safeCheckIns, addSafeCheckIn, districts } = useSafetyData();
 
   // ── REFS ────────────────────────────────────────────────────────────
   const gpsWatchId = useRef<number | null>(null);
   const gpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── DERIVED STATE ───────────────────────────────────────────────────
-  const palette = isUltraLowPower ? OLED_COLORS : THEME;
+  // ── RESOURCE COUNTS per category ───────────────────────────────────
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const cat of ALL_CATEGORIES) {
+      counts[cat] = resources.filter((r) => r.category === cat && r.isOperational).length;
+    }
+    return counts;
+  }, [resources]);
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // POWER STATE TOGGLE (deep settings only)
@@ -184,31 +191,21 @@ export default function App() {
 
   useEffect(() => {
     if (!('geolocation' in navigator)) return;
-
     if (isUltraLowPower) {
       const poll = () => {
         navigator.geolocation.getCurrentPosition(updatePosition, handleGeoError, {
-          enableHighAccuracy: false,
-          timeout: 10_000,
-          maximumAge: GPS_INTERVAL_LOW_POWER,
+          enableHighAccuracy: false, timeout: 10_000, maximumAge: GPS_INTERVAL_LOW_POWER,
         });
       };
       poll();
       gpsIntervalRef.current = setInterval(poll, GPS_INTERVAL_LOW_POWER);
-      return () => {
-        if (gpsIntervalRef.current) clearInterval(gpsIntervalRef.current);
-      };
+      return () => { if (gpsIntervalRef.current) clearInterval(gpsIntervalRef.current); };
     } else {
       gpsWatchId.current = navigator.geolocation.watchPosition(
-        updatePosition,
-        handleGeoError,
+        updatePosition, handleGeoError,
         { enableHighAccuracy: true, timeout: 15_000, maximumAge: GPS_INTERVAL_NORMAL },
       );
-      return () => {
-        if (gpsWatchId.current !== null) {
-          navigator.geolocation.clearWatch(gpsWatchId.current);
-        }
-      };
+      return () => { if (gpsWatchId.current !== null) navigator.geolocation.clearWatch(gpsWatchId.current); };
     }
   }, [isUltraLowPower, updatePosition, handleGeoError]);
 
@@ -220,14 +217,10 @@ export default function App() {
       if (isUltraLowPower) return;
       setIsNavigating(true);
       const result = await calculateSafestRoute(
-        { lat: userPosition.lat, lng: userPosition.lng },
-        destination,
-        dangerZones,
+        { lat: userPosition.lat, lng: userPosition.lng }, destination, dangerZones,
       );
       setNavigation(result);
-      if (result.error) {
-        console.error('[Guardian Nav]', result.error);
-      }
+      if (result.error) console.error('[Guardian Nav]', result.error);
     },
     [userPosition, dangerZones, isUltraLowPower],
   );
@@ -246,11 +239,6 @@ export default function App() {
     [userPosition, dangerZones],
   );
 
-  const nearbyDangers = useMemo(
-    () => nearbyDangerZones(userPosition.lat, userPosition.lng, dangerZones, 5),
-    [userPosition, dangerZones],
-  );
-
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // HANDLERS
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -265,7 +253,6 @@ export default function App() {
   );
 
   const handleSafeCheckIn = useCallback(() => {
-    // Find nearest district
     const nearest = districts[0] || { id: 'beirut' };
     addSafeCheckIn(nearest.id);
     setSafeConfirm('✅ Check-in sent! Stay safe.');
@@ -273,18 +260,14 @@ export default function App() {
   }, [addSafeCheckIn, districts]);
 
   const handleSOS = useCallback(() => {
-    // Open dialer to Lebanese Civil Defense
     window.open('tel:125', '_self');
   }, []);
 
   const toggleCategory = useCallback((cat: ResourceCategory) => {
     setActiveCategories((prev) => {
       const next = new Set(prev);
-      if (next.has(cat)) {
-        next.delete(cat);
-      } else {
-        next.add(cat);
-      }
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
       return next;
     });
   }, []);
@@ -296,60 +279,36 @@ export default function App() {
   );
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // RENDER: MAP VIEW (Phase 14 Full-Screen Leaflet)
+  // RENDER: MAP VIEW
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const renderMap = () => {
     if (isUltraLowPower) {
       return (
         <LowPowerListView
-          resources={resources}
-          dangerZones={dangerZones}
-          userLat={userPosition.lat}
-          userLng={userPosition.lng}
-          lang={language}
-          onSelectResource={handleResourceSelect}
+          resources={resources} dangerZones={dangerZones}
+          userLat={userPosition.lat} userLng={userPosition.lng}
+          lang={language} onSelectResource={handleResourceSelect}
         />
       );
     }
 
     return (
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-        {/* ── LAYER FILTER CHIPS ──────────────────────────────────── */}
-        <div style={{
-          position: 'absolute',
-          top: '10px',
-          left: '10px',
-          right: '60px',
-          zIndex: 1000,
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '6px',
-        }}>
+        {/* ── CATEGORY FILTER CHIPS ──────────────────────────────── */}
+        <div className="category-chips">
           {ALL_CATEGORIES.map((cat) => {
             const active = activeCategories.has(cat);
+            const count = categoryCounts[cat] || 0;
             return (
               <button
                 key={cat}
+                id={`chip-${cat}`}
                 onClick={() => toggleCategory(cat)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '5px 10px',
-                  borderRadius: '20px',
-                  border: `1px solid ${active ? THEME.primary : 'rgba(255,255,255,0.2)'}`,
-                  backgroundColor: active ? 'rgba(37, 99, 235, 0.85)' : 'rgba(15, 23, 42, 0.8)',
-                  color: active ? '#fff' : 'rgba(255,255,255,0.7)',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  fontFamily: SYSTEM_FONT_STACK,
-                  cursor: 'pointer',
-                  backdropFilter: 'blur(8px)',
-                  transition: 'all 0.2s ease',
-                }}
+                className={`chip ${active ? 'chip-active' : 'chip-inactive'}`}
               >
-                <span>{CATEGORY_ICONS[cat]}</span>
-                <span>{CATEGORY_LABELS[cat]?.en || cat}</span>
+                <span className="chip-emoji">{CATEGORY_ICONS[cat]}</span>
+                <span className="chip-label">{CATEGORY_LABELS[cat]?.en || cat}</span>
+                <span className="chip-count">{count}</span>
               </button>
             );
           })}
@@ -368,14 +327,10 @@ export default function App() {
             attribution='&copy; <a href="https://carto.com/">CARTO</a>'
             maxZoom={19}
           />
-
           <MapRecenter lat={userPosition.lat} lng={userPosition.lng} />
 
-          {/* ── USER POSITION MARKER ──────────────────────────── */}
-          <Marker
-            position={[userPosition.lat, userPosition.lng]}
-            icon={userIcon}
-          >
+          {/* User Position */}
+          <Marker position={[userPosition.lat, userPosition.lng]} icon={userIcon}>
             <Popup>
               <div style={{ fontFamily: SYSTEM_FONT_STACK, fontSize: '13px' }}>
                 <strong>📍 Your Location</strong><br />
@@ -384,22 +339,16 @@ export default function App() {
             </Popup>
           </Marker>
 
-          {/* ── RESOURCE MARKERS (7 layers) ────────────────────── */}
+          {/* Resource Markers — 7 layers from GUARDIAN_DATA */}
           {filteredResources.map((r) => (
             <Marker
               key={r.id}
               position={[r.lat, r.lng]}
               icon={createCategoryIcon(r.category)}
-              eventHandlers={{
-                click: () => handleResourceSelect(r),
-              }}
+              eventHandlers={{ click: () => handleResourceSelect(r) }}
             >
               <Popup>
-                <div style={{
-                  fontFamily: SYSTEM_FONT_STACK,
-                  fontSize: '13px',
-                  maxWidth: '220px',
-                }}>
+                <div style={{ fontFamily: SYSTEM_FONT_STACK, fontSize: '13px', maxWidth: '220px' }}>
                   <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>
                     {CATEGORY_ICONS[r.category]} {language === 'ar' && r.nameAr ? r.nameAr : language === 'fr' && r.nameFr ? r.nameFr : r.name}
                   </div>
@@ -407,34 +356,9 @@ export default function App() {
                     {CATEGORY_LABELS[r.category]?.en} · {r.operatingHours || 'Hours N/A'}
                   </div>
                   {r.phone && (
-                    <a href={`tel:${r.phone}`} style={{
-                      display: 'inline-block',
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      backgroundColor: THEME.primary,
-                      color: '#fff',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      textDecoration: 'none',
-                      marginRight: '6px',
-                    }}>
-                      📞 Call
-                    </a>
+                    <a href={`tel:${r.phone}`} className="popup-btn popup-btn-call">📞 Call</a>
                   )}
-                  <button
-                    onClick={() => navigateTo({ lat: r.lat, lng: r.lng })}
-                    style={{
-                      display: 'inline-block',
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      backgroundColor: THEME.success,
-                      color: '#000',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      border: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
+                  <button onClick={() => navigateTo({ lat: r.lat, lng: r.lng })} className="popup-btn popup-btn-nav">
                     🧭 Navigate
                   </button>
                   {r.verifiedBy && (
@@ -447,7 +371,7 @@ export default function App() {
             </Marker>
           ))}
 
-          {/* ── DANGER ZONE CIRCLES ──────────────────────────────── */}
+          {/* Danger Zone Circles */}
           {dangerZones.map((dz) => (
             <Circle
               key={dz.id}
@@ -463,31 +387,25 @@ export default function App() {
             >
               <Popup>
                 <div style={{ fontFamily: SYSTEM_FONT_STACK, fontSize: '13px' }}>
-                  <div style={{
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    color: SEVERITY_COLORS[dz.severity],
-                    marginBottom: '4px',
-                  }}>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: SEVERITY_COLORS[dz.severity], marginBottom: '4px' }}>
                     🚨 {dz.severity.toUpperCase()} ZONE
                   </div>
                   <div>{dz.description}</div>
                   <div style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px' }}>
-                    Radius: {dz.radiusKm}km · Reported: {new Date(dz.reportedAt).toLocaleTimeString()}
+                    Radius: {dz.radiusKm}km · {new Date(dz.reportedAt).toLocaleTimeString()}
                   </div>
                 </div>
               </Popup>
             </Circle>
           ))}
 
-          {/* ── OSRM SAFE ROUTING POLYLINES ──────────────────────── */}
+          {/* OSRM Safe Route Polylines */}
           {navigation && navigation.routes.map((route, i) => (
             <Polyline
               key={`route-${i}`}
               positions={route.coordinates.map((c) => [c.lat, c.lng] as [number, number])}
               pathOptions={{
-                color: route.color,
-                weight: route.isSafest ? 5 : 3,
+                color: route.color, weight: route.isSafest ? 5 : 3,
                 opacity: route.isSafest ? 1 : 0.4,
                 dashArray: route.isSafest ? undefined : '10 6',
               }}
@@ -495,51 +413,24 @@ export default function App() {
           ))}
         </MapContainer>
 
-        {/* ── NAVIGATION PANEL (overlay) ──────────────────────────── */}
+        {/* Navigation Panel Overlay */}
         {navigation && navigation.routes.length > 0 && (
-          <div style={{
-            position: 'absolute',
-            top: '56px',
-            left: '10px',
-            right: '10px',
-            zIndex: 1000,
-            backgroundColor: 'rgba(15, 23, 42, 0.92)',
-            backdropFilter: 'blur(12px)',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            border: `1px solid ${THEME.border}`,
-            boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-          }}>
-            <div style={{ fontFamily: SYSTEM_FONT_STACK }}>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: ROUTE_COLORS.safest }}>
-                🧭 Safest Route
-              </div>
+          <div className="nav-panel">
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: ROUTE_COLORS.safest }}>🧭 Safest Route</div>
               <div style={{ fontSize: '12px', color: THEME.textMuted, marginTop: '2px' }}>
                 {navigation.routes[0].distanceKm.toFixed(1)}km · {navigation.routes[0].durationMin} min
                 {navigation.routes.length > 1 && ` · ${navigation.routes.length} alternatives`}
               </div>
             </div>
-            <button
-              onClick={cancelNavigation}
-              style={{
-                padding: '6px 16px',
-                borderRadius: '8px',
-                border: 'none',
-                backgroundColor: THEME.danger,
-                color: '#fff',
-                fontFamily: SYSTEM_FONT_STACK,
-                fontSize: '12px',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              ✕ Cancel
-            </button>
+            <button onClick={cancelNavigation} className="nav-panel-cancel">✕ Cancel</button>
           </div>
         )}
+
+        {/* Resource Count Badge */}
+        <div className="resource-count-badge">
+          {filteredResources.length} / {resources.filter((r) => r.isOperational).length} resources
+        </div>
       </div>
     );
   };
@@ -548,73 +439,30 @@ export default function App() {
   // RENDER: ALERTS VIEW
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const renderAlerts = () => (
-    <div style={{
-      padding: '16px',
-      fontFamily: SYSTEM_FONT_STACK,
-      overflowY: 'auto',
-      height: '100%',
-    }}>
-      <h2 style={{
-        fontSize: '20px',
-        fontWeight: 800,
-        marginBottom: '16px',
-        color: THEME.text,
-        letterSpacing: '-0.3px',
-      }}>
-        ⚠️ Live Alerts ({alerts.length})
-      </h2>
+    <div className="alerts-container">
+      <h2 className="section-title">⚠️ Live Alerts ({dangerZones.length + alerts.length})</h2>
 
-      {/* Danger Zones */}
       {dangerZones.map((dz) => (
-        <div
-          key={dz.id}
-          style={{
-            padding: '14px',
-            marginBottom: '10px',
-            borderRadius: '10px',
-            backgroundColor: THEME.surface,
-            borderLeft: `4px solid ${SEVERITY_COLORS[dz.severity]}`,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-          }}
-        >
-          <div style={{
-            fontSize: '14px',
-            fontWeight: 700,
-            color: SEVERITY_COLORS[dz.severity],
-            marginBottom: '4px',
-          }}>
+        <div key={dz.id} className="alert-card" style={{ borderLeftColor: SEVERITY_COLORS[dz.severity] }}>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: SEVERITY_COLORS[dz.severity] }}>
             🚨 {dz.severity.toUpperCase()}
           </div>
-          <div style={{ fontSize: '13px', color: THEME.text }}>{dz.description}</div>
-          <div style={{ fontSize: '11px', color: THEME.textMuted, marginTop: '4px' }}>
+          <div className="alert-text">{dz.description}</div>
+          <div className="alert-meta">
             Radius: {dz.radiusKm}km · {new Date(dz.reportedAt).toLocaleString()}
           </div>
         </div>
       ))}
 
-      {/* Feed Alerts from safetyData */}
       {alerts.map((a) => (
-        <div
-          key={a.id}
-          style={{
-            padding: '14px',
-            marginBottom: '10px',
-            borderRadius: '10px',
-            backgroundColor: THEME.surface,
-            borderLeft: `4px solid ${a.type === 'danger' ? '#FF3B30' : a.type === 'warning' ? '#FFCC00' : '#3B82F6'}`,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-          }}
-        >
-          <div style={{
-            fontSize: '13px',
-            fontWeight: 700,
-            color: THEME.text,
-            marginBottom: '2px',
-          }}>
+        <div key={a.id} className="alert-card" style={{
+          borderLeftColor: a.type === 'danger' ? '#FF3B30' : a.type === 'warning' ? '#FFCC00' : '#3B82F6',
+        }}>
+          <div className="alert-title">
             {a.type === 'danger' ? '🔴' : a.type === 'warning' ? '🟡' : 'ℹ️'} {a.location}
           </div>
-          <div style={{ fontSize: '12px', color: THEME.textMuted }}>{a.message}</div>
-          <div style={{ fontSize: '10px', color: THEME.textMuted, marginTop: '4px' }}>
+          <div className="alert-text">{a.message}</div>
+          <div className="alert-meta">
             {a.timestamp} ago · {a.verified ? '✓ Verified' : 'Unverified'}
             {a.verificationCount ? ` (${a.verificationCount})` : ''}
           </div>
@@ -624,155 +472,86 @@ export default function App() {
   );
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // RENDER: SETTINGS VIEW (Battery Saver lives HERE only)
+  // RENDER: SETTINGS VIEW (Battery Saver — DEEP MENU ONLY)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const renderSettings = () => (
-    <div style={{
-      padding: '24px 16px',
-      fontFamily: SYSTEM_FONT_STACK,
-      color: THEME.text,
-      overflowY: 'auto',
-      height: '100%',
-    }}>
-      <h2 style={{ fontSize: '20px', fontWeight: 800, marginBottom: '20px', letterSpacing: '-0.3px' }}>
-        ⚙️ Settings
-      </h2>
+    <div className="settings-container">
+      <h2 className="section-title">⚙️ Settings</h2>
 
-      {/* Battery Saver — DEEP SETTINGS ONLY */}
-      <div style={settingRowStyle}>
+      <div className="setting-row">
         <div>
-          <div style={settingLabelStyle}>🔋 Battery Saver Mode</div>
-          <div style={settingDescStyle}>
-            Disables map rendering, GPS every 5 min, OLED-optimized list view
-          </div>
+          <div className="setting-label">🔋 Battery Saver Mode</div>
+          <div className="setting-desc">Disables map, GPS every 5 min, OLED list view</div>
         </div>
-        <button
-          onClick={toggleUltraLowPower}
-          style={{
-            padding: '8px 20px',
-            borderRadius: '20px',
-            border: 'none',
-            backgroundColor: isUltraLowPower ? THEME.success : THEME.surface,
-            color: isUltraLowPower ? '#000' : THEME.textMuted,
-            fontFamily: SYSTEM_FONT_STACK,
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-        >
+        <button onClick={toggleUltraLowPower} className={`setting-toggle ${isUltraLowPower ? 'toggle-on' : 'toggle-off'}`}>
           {isUltraLowPower ? '● ON' : '○ OFF'}
         </button>
       </div>
 
-      {/* Language */}
-      <div style={settingRowStyle}>
-        <div style={settingLabelStyle}>🌐 Language</div>
+      <div className="setting-row">
+        <div className="setting-label">🌐 Language</div>
         <div style={{ display: 'flex', gap: '6px' }}>
           {(['en', 'ar', 'fr'] as Language[]).map((lang) => (
-            <button
-              key={lang}
-              onClick={() => setLanguage(lang)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '8px',
-                border: `1px solid ${language === lang ? THEME.primary : THEME.border}`,
-                backgroundColor: language === lang ? THEME.primary + '33' : 'transparent',
-                color: language === lang ? THEME.primary : THEME.textMuted,
-                fontFamily: SYSTEM_FONT_STACK,
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
+            <button key={lang} onClick={() => setLanguage(lang)}
+              className={`lang-btn ${language === lang ? 'lang-active' : ''}`}>
               {lang.toUpperCase()}
             </button>
           ))}
         </div>
       </div>
 
-      {/* GPS Status */}
-      <div style={settingRowStyle}>
+      <div className="setting-row">
         <div>
-          <div style={settingLabelStyle}>📡 GPS Tracking</div>
-          <div style={settingDescStyle}>
-            {isUltraLowPower ? 'Polling every 5 minutes (power saving)' : 'Continuous high-accuracy tracking'}
-          </div>
+          <div className="setting-label">📡 GPS Tracking</div>
+          <div className="setting-desc">{isUltraLowPower ? 'Polling every 5 min' : 'Continuous high-accuracy'}</div>
         </div>
         <div style={{ fontSize: '12px', fontWeight: 700, color: THEME.success }}>
           {isUltraLowPower ? '5m' : '15s'}
         </div>
       </div>
 
-      {/* Stats */}
-      <div style={settingRowStyle}>
-        <div style={settingLabelStyle}>📍 Loaded Resources</div>
-        <div style={{ fontSize: '13px', color: THEME.textMuted }}>
-          {resources.filter((r) => r.isOperational).length} operational
-        </div>
+      <div className="setting-row">
+        <div className="setting-label">📍 Loaded Resources</div>
+        <div className="setting-value">{resources.filter((r) => r.isOperational).length} operational</div>
       </div>
 
-      <div style={settingRowStyle}>
-        <div style={settingLabelStyle}>⚠️ Active Danger Zones</div>
-        <div style={{
-          fontSize: '13px',
-          fontWeight: 700,
-          color: dangerZones.length > 0 ? SEVERITY_COLORS.critical : THEME.success,
-        }}>
+      <div className="setting-row">
+        <div className="setting-label">⚠️ Active Danger Zones</div>
+        <div className="setting-value" style={{ color: dangerZones.length > 0 ? SEVERITY_COLORS.critical : THEME.success }}>
           {dangerZones.length}
         </div>
       </div>
 
-      <div style={settingRowStyle}>
-        <div style={settingLabelStyle}>✅ Community Check-ins</div>
-        <div style={{ fontSize: '13px', color: THEME.textMuted }}>
-          {safeCheckIns.length} recent
-        </div>
+      <div className="setting-row">
+        <div className="setting-label">✅ Community Check-ins</div>
+        <div className="setting-value">{safeCheckIns.length} recent</div>
       </div>
 
-      <div style={{
-        textAlign: 'center',
-        padding: '24px',
-        fontSize: '11px',
-        color: THEME.textMuted,
-        fontFamily: SYSTEM_FONT_STACK,
-      }}>
-        Guardian v{APP_VERSION} — Phase 16.1 Map Recovery<br />
+      {/* Per-category breakdown */}
+      <h3 className="section-subtitle">📊 Resource Breakdown</h3>
+      {ALL_CATEGORIES.map((cat) => (
+        <div key={cat} className="setting-row">
+          <div className="setting-label">{CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]?.en}</div>
+          <div className="setting-value">{categoryCounts[cat]}</div>
+        </div>
+      ))}
+
+      <div className="settings-footer">
+        Guardian v{APP_VERSION} — Phase 16.1 Universal Resource Injection<br />
         Generated via Antigravity Editor
       </div>
     </div>
   );
 
-  // ── Settings helpers ────────────────────────────────────────────────
-  const settingRowStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '16px 0',
-    borderBottom: `1px solid ${THEME.border}`,
-  };
-  const settingLabelStyle: React.CSSProperties = {
-    fontFamily: SYSTEM_FONT_STACK,
-    fontSize: '14px',
-    fontWeight: 600,
-  };
-  const settingDescStyle: React.CSSProperties = {
-    fontFamily: SYSTEM_FONT_STACK,
-    fontSize: '12px',
-    color: THEME.textMuted,
-    marginTop: '2px',
-  };
-
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // RENDER: MAIN CONTENT ROUTER
+  // RENDER: CONTENT ROUTER
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const renderContent = () => {
     switch (currentView) {
       case 'alerts': return renderAlerts();
       case 'settings': return renderSettings();
       case 'map':
-      default:
-        return renderMap();
+      default: return renderMap();
     }
   };
 
@@ -780,77 +559,20 @@ export default function App() {
   // RENDER: APP SHELL
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   return (
-    <div style={{
-      fontFamily: '"Inter", ' + SYSTEM_FONT_STACK,
-      backgroundColor: THEME.background,
-      color: THEME.text,
-      height: '100dvh',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-    }}>
+    <div className="guardian-app">
       {/* ── HEADER ──────────────────────────────────────────────────── */}
-      <header style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '10px 16px',
-        backgroundColor: 'rgba(15, 23, 42, 0.92)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: `1px solid ${THEME.border}`,
-        zIndex: 1100,
-        flexShrink: 0,
-      }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          fontFamily: SYSTEM_FONT_STACK,
-          fontSize: '18px',
-          fontWeight: 800,
-          color: THEME.text,
-          letterSpacing: '-0.5px',
-        }}>
+      <header className="guardian-header">
+        <div className="header-logo">
           <span>🛡️</span>
           <span>GUARDIAN</span>
-          {isUltraLowPower && (
-            <span style={{
-              fontSize: '9px',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              backgroundColor: OLED_COLORS.accent + '33',
-              color: OLED_COLORS.accent,
-              fontWeight: 700,
-            }}>
-              LOW POWER
-            </span>
-          )}
+          {isUltraLowPower && <span className="header-badge">LOW POWER</span>}
         </div>
-        <div style={{
-          fontSize: '11px',
-          color: THEME.textMuted,
-          fontFamily: SYSTEM_FONT_STACK,
-        }}>
-          v{APP_VERSION}
-        </div>
+        <div className="header-version">v{APP_VERSION}</div>
       </header>
 
       {/* ── DANGER ZONE BANNER ──────────────────────────────────────── */}
       {currentDanger && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: '10px 16px',
-          backgroundColor: '#7F1D1D',
-          borderBottom: `2px solid ${SEVERITY_COLORS.critical}`,
-          fontFamily: SYSTEM_FONT_STACK,
-          fontSize: '13px',
-          fontWeight: 600,
-          color: '#FF6666',
-          flexShrink: 0,
-          animation: 'pulse 2s infinite',
-        }} role="alert">
+        <div className="danger-banner" role="alert">
           <span style={{ fontSize: '20px' }}>🚨</span>
           <div>
             <strong>DANGER — You are inside an active zone!</strong>
@@ -862,188 +584,292 @@ export default function App() {
       )}
 
       {/* ── SAFE CONFIRM TOAST ──────────────────────────────────────── */}
-      {safeConfirm && (
-        <div style={{
-          position: 'fixed',
-          top: '80px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          padding: '10px 24px',
-          borderRadius: '12px',
-          backgroundColor: 'rgba(34, 197, 94, 0.95)',
-          color: '#000',
-          fontFamily: SYSTEM_FONT_STACK,
-          fontSize: '14px',
-          fontWeight: 700,
-          zIndex: 9999,
-          boxShadow: '0 4px 20px rgba(34, 197, 94, 0.4)',
-        }}>
-          {safeConfirm}
-        </div>
-      )}
+      {safeConfirm && <div className="safe-toast">{safeConfirm}</div>}
 
       {/* ── MAIN CONTENT ────────────────────────────────────────────── */}
-      <main style={{
-        flex: 1,
-        position: 'relative',
-        overflow: 'hidden',
-      }}>
+      <main className="guardian-main">
         {renderContent()}
       </main>
 
       {/* ── SOS BUTTON — ANCHORED BOTTOM-RIGHT ──────────────────────── */}
-      <button
-        id="sos-button"
-        onClick={handleSOS}
-        aria-label="Emergency SOS - Call 125"
-        style={{
-          position: 'fixed',
-          bottom: '80px',
-          right: '16px',
-          width: '56px',
-          height: '56px',
-          borderRadius: '50%',
-          border: 'none',
-          backgroundColor: '#FF3B30',
-          color: '#fff',
-          fontSize: '16px',
-          fontWeight: 900,
-          fontFamily: SYSTEM_FONT_STACK,
-          cursor: 'pointer',
-          zIndex: 2000,
-          boxShadow: '0 4px 20px rgba(255, 59, 48, 0.5), 0 0 0 4px rgba(255, 59, 48, 0.2)',
-          animation: 'sos-pulse 2s ease-in-out infinite',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          letterSpacing: '1px',
-        }}
-      >
+      <button id="sos-button" onClick={handleSOS} aria-label="Emergency SOS - Call 125" className="sos-btn">
         SOS
       </button>
 
       {/* ── BOTTOM NAVIGATION BAR ───────────────────────────────────── */}
-      <nav style={{
-        display: 'flex',
-        alignItems: 'stretch',
-        borderTop: `1px solid ${THEME.border}`,
-        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-        backdropFilter: 'blur(12px)',
-        zIndex: 1100,
-        flexShrink: 0,
-      }}>
-        {/* MAP TAB */}
-        <button
-          id="nav-map"
-          style={navItemStyle(currentView === 'map')}
-          onClick={() => setCurrentView('map')}
-        >
-          <span style={NAV_ICON_STYLE}>🗺️</span>
-          <span>Map</span>
+      <nav className="guardian-nav">
+        <button id="nav-map" className={`nav-item ${currentView === 'map' ? 'nav-active' : ''}`}
+          onClick={() => setCurrentView('map')}>
+          <span className="nav-icon">🗺️</span><span>Map</span>
         </button>
 
-        {/* ALERTS TAB */}
-        <button
-          id="nav-alerts"
-          style={navItemStyle(currentView === 'alerts')}
-          onClick={() => setCurrentView('alerts')}
-        >
-          <span style={NAV_ICON_STYLE}>⚠️</span>
-          <span>Alerts</span>
-          {(dangerZones.length + alerts.length) > 0 && (
-            <span style={{
-              position: 'absolute',
-              top: '6px',
-              right: 'calc(50% - 16px)',
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: SEVERITY_COLORS.critical,
-            }} />
-          )}
+        <button id="nav-alerts" className={`nav-item ${currentView === 'alerts' ? 'nav-active' : ''}`}
+          onClick={() => setCurrentView('alerts')}>
+          <span className="nav-icon">⚠️</span><span>Alerts</span>
+          {(dangerZones.length + alerts.length) > 0 && <span className="nav-badge" />}
         </button>
 
         {/* I AM SAFE — CENTER */}
-        <button
-          id="nav-safe"
-          className="btn-safe-pulse"
-          onClick={handleSafeCheckIn}
-          style={{
-            flex: 1.4,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '8px 4px',
-            fontFamily: SYSTEM_FONT_STACK,
-            fontSize: '10px',
-            fontWeight: 800,
-            color: '#22C55E',
-            cursor: 'pointer',
-            border: 'none',
-            background: 'none',
-            position: 'relative',
-            letterSpacing: '0.5px',
-          }}
-        >
-          <span style={{ fontSize: '22px', marginBottom: '2px' }}>✅</span>
-          <span>SAFE</span>
+        <button id="nav-safe" className="nav-item nav-safe btn-safe-pulse" onClick={handleSafeCheckIn}>
+          <span className="nav-icon" style={{ fontSize: '22px' }}>✅</span><span>SAFE</span>
         </button>
 
-        {/* SETTINGS TAB */}
-        <button
-          id="nav-settings"
-          style={navItemStyle(currentView === 'settings')}
-          onClick={() => setCurrentView('settings')}
-        >
-          <span style={NAV_ICON_STYLE}>⚙️</span>
-          <span>Settings</span>
+        <button id="nav-settings" className={`nav-item ${currentView === 'settings' ? 'nav-active' : ''}`}
+          onClick={() => setCurrentView('settings')}>
+          <span className="nav-icon">⚙️</span><span>Settings</span>
         </button>
       </nav>
 
-      {/* ── GLOBAL ANIMATION KEYFRAMES ─────────────────────────────── */}
+      {/* ── GLOBAL STYLES — Mobile-First Responsive ────────────────── */}
       <style>{`
+        /* ═══ RESET & BASE ═══ */
+        .guardian-app {
+          font-family: "Inter", ${SYSTEM_FONT_STACK};
+          background: ${THEME.background};
+          color: ${THEME.text};
+          height: 100dvh;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        /* ═══ HEADER ═══ */
+        .guardian-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 10px 16px;
+          background: rgba(15, 23, 42, 0.92);
+          backdrop-filter: blur(12px);
+          border-bottom: 1px solid ${THEME.border};
+          z-index: 1100;
+          flex-shrink: 0;
+        }
+        .header-logo {
+          display: flex; align-items: center; gap: 8px;
+          font-size: 18px; font-weight: 800; letter-spacing: -0.5px;
+        }
+        .header-badge {
+          font-size: 9px; padding: 2px 6px; border-radius: 4px;
+          background: ${OLED_COLORS.accent}33; color: ${OLED_COLORS.accent}; font-weight: 700;
+        }
+        .header-version { font-size: 11px; color: ${THEME.textMuted}; }
+
+        /* ═══ MAIN ═══ */
+        .guardian-main { flex: 1; position: relative; overflow: hidden; }
+
+        /* ═══ CATEGORY CHIPS ═══ */
+        .category-chips {
+          position: absolute; top: 10px; left: 10px; right: 60px;
+          z-index: 1000; display: flex; flex-wrap: wrap; gap: 5px;
+        }
+        .chip {
+          display: flex; align-items: center; gap: 3px;
+          padding: 4px 8px; border-radius: 20px; font-size: 11px;
+          font-weight: 600; font-family: ${SYSTEM_FONT_STACK};
+          cursor: pointer; border: 1px solid; backdrop-filter: blur(8px);
+          transition: all 0.2s ease;
+        }
+        .chip-active {
+          background: rgba(37, 99, 235, 0.85); border-color: ${THEME.primary}; color: #fff;
+        }
+        .chip-inactive {
+          background: rgba(15, 23, 42, 0.8); border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.7);
+        }
+        .chip-emoji { font-size: 13px; }
+        .chip-label { }
+        .chip-count {
+          font-size: 9px; background: rgba(255,255,255,0.15); padding: 1px 5px;
+          border-radius: 8px; min-width: 16px; text-align: center;
+        }
+
+        /* ═══ RESOURCE COUNT BADGE ═══ */
+        .resource-count-badge {
+          position: absolute; bottom: 12px; left: 12px; z-index: 1000;
+          padding: 4px 10px; border-radius: 8px;
+          background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px);
+          font-size: 11px; color: ${THEME.textMuted}; font-weight: 600;
+          border: 1px solid ${THEME.border};
+        }
+
+        /* ═══ NAV PANEL ═══ */
+        .nav-panel {
+          position: absolute; top: 56px; left: 10px; right: 10px; z-index: 1000;
+          background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(12px);
+          border-radius: 12px; padding: 12px 16px;
+          display: flex; align-items: center; justify-content: space-between;
+          border: 1px solid ${THEME.border}; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+        .nav-panel-cancel {
+          padding: 6px 16px; border-radius: 8px; border: none;
+          background: ${THEME.danger}; color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+        }
+
+        /* ═══ POPUP BUTTONS ═══ */
+        .popup-btn {
+          display: inline-block; padding: 4px 10px; border-radius: 6px;
+          font-size: 11px; font-weight: 600; text-decoration: none;
+          margin-right: 6px; border: none; cursor: pointer;
+        }
+        .popup-btn-call { background: ${THEME.primary}; color: #fff; }
+        .popup-btn-nav { background: ${THEME.success}; color: #000; }
+
+        /* ═══ DANGER BANNER ═══ */
+        .danger-banner {
+          display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+          background: #7F1D1D; border-bottom: 2px solid ${SEVERITY_COLORS.critical};
+          font-size: 13px; font-weight: 600; color: #FF6666; flex-shrink: 0;
+        }
+
+        /* ═══ SAFE TOAST ═══ */
+        .safe-toast {
+          position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+          padding: 10px 24px; border-radius: 12px;
+          background: rgba(34, 197, 94, 0.95); color: #000;
+          font-size: 14px; font-weight: 700; z-index: 9999;
+          box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4);
+        }
+
+        /* ═══ SOS BUTTON ═══ */
+        .sos-btn {
+          position: fixed; bottom: 76px; right: 16px;
+          width: 54px; height: 54px; border-radius: 50%; border: none;
+          background: #FF3B30; color: #fff; font-size: 15px; font-weight: 900;
+          cursor: pointer; z-index: 2000; display: flex;
+          align-items: center; justify-content: center; letter-spacing: 1px;
+          animation: sos-pulse 2s ease-in-out infinite;
+          box-shadow: 0 4px 20px rgba(255, 59, 48, 0.5), 0 0 0 4px rgba(255, 59, 48, 0.2);
+        }
         @keyframes sos-pulse {
           0%, 100% { box-shadow: 0 4px 20px rgba(255,59,48,0.5), 0 0 0 4px rgba(255,59,48,0.2); transform: scale(1); }
           50% { box-shadow: 0 4px 30px rgba(255,59,48,0.8), 0 0 0 8px rgba(255,59,48,0.15); transform: scale(1.05); }
         }
-        .guardian-marker { background: none !important; border: none !important; }
-        .guardian-user-marker { background: none !important; border: none !important; }
+
+        /* ═══ BOTTOM NAV ═══ */
+        .guardian-nav {
+          display: flex; align-items: stretch;
+          border-top: 1px solid ${THEME.border};
+          background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(12px);
+          z-index: 1100; flex-shrink: 0;
+        }
+        .nav-item {
+          flex: 1; display: flex; flex-direction: column; align-items: center;
+          justify-content: center; padding: 8px 4px; font-size: 10px;
+          font-weight: 500; color: ${THEME.textMuted}; cursor: pointer;
+          border: none; background: none; position: relative; transition: color 0.15s ease;
+        }
+        .nav-active { color: ${THEME.primary}; font-weight: 700; }
+        .nav-safe { flex: 1.4; color: #22C55E; font-weight: 800; letter-spacing: 0.5px; }
+        .nav-icon { font-size: 20px; margin-bottom: 2px; }
+        .nav-badge {
+          position: absolute; top: 6px; right: calc(50% - 16px);
+          width: 8px; height: 8px; border-radius: 50%; background: ${SEVERITY_COLORS.critical};
+        }
+
+        /* ═══ ALERTS ═══ */
+        .alerts-container { padding: 16px; overflow-y: auto; height: 100%; }
+        .section-title { font-size: 20px; font-weight: 800; margin-bottom: 16px; letter-spacing: -0.3px; }
+        .section-subtitle { font-size: 14px; font-weight: 700; margin: 16px 0 8px; color: ${THEME.textMuted}; }
+        .alert-card {
+          padding: 14px; margin-bottom: 10px; border-radius: 10px;
+          background: ${THEME.surface}; border-left: 4px solid;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .alert-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+        .alert-text { font-size: 12px; color: ${THEME.textMuted}; }
+        .alert-meta { font-size: 10px; color: ${THEME.textMuted}; margin-top: 4px; }
+
+        /* ═══ SETTINGS ═══ */
+        .settings-container { padding: 24px 16px; overflow-y: auto; height: 100%; }
+        .setting-row {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 14px 0; border-bottom: 1px solid ${THEME.border};
+        }
+        .setting-label { font-size: 14px; font-weight: 600; }
+        .setting-desc { font-size: 12px; color: ${THEME.textMuted}; margin-top: 2px; }
+        .setting-value { font-size: 13px; color: ${THEME.textMuted}; }
+        .setting-toggle {
+          padding: 8px 20px; border-radius: 20px; border: none;
+          font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s ease;
+        }
+        .toggle-on { background: ${THEME.success}; color: #000; }
+        .toggle-off { background: ${THEME.surface}; color: ${THEME.textMuted}; }
+        .lang-btn {
+          padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
+          cursor: pointer; border: 1px solid ${THEME.border};
+          background: transparent; color: ${THEME.textMuted}; transition: all 0.15s ease;
+        }
+        .lang-active { border-color: ${THEME.primary}; background: ${THEME.primary}33; color: ${THEME.primary}; }
+        .settings-footer {
+          text-align: center; padding: 24px; font-size: 11px; color: ${THEME.textMuted};
+        }
+
+        /* ═══ LEAFLET OVERRIDES ═══ */
+        .guardian-marker, .guardian-user-marker { background: none !important; border: none !important; }
         .leaflet-popup-content-wrapper {
-          background: rgba(15, 23, 42, 0.95) !important;
-          color: #F1F5F9 !important;
-          border-radius: 12px !important;
-          border: 1px solid #334155 !important;
+          background: rgba(15, 23, 42, 0.95) !important; color: #F1F5F9 !important;
+          border-radius: 12px !important; border: 1px solid #334155 !important;
           box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
         }
         .leaflet-popup-tip { background: rgba(15, 23, 42, 0.95) !important; }
+
+        /* ═══════════════════════════════════════════════════════════════ */
+        /* MOBILE-FIRST RESPONSIVE — 390px / 430px / Tablet              */
+        /* ═══════════════════════════════════════════════════════════════ */
+
+        /* Small phones (390px and below) */
+        @media (max-width: 390px) {
+          .header-logo { font-size: 15px; gap: 6px; }
+          .header-version { font-size: 9px; }
+          .category-chips { gap: 3px; right: 48px; }
+          .chip { padding: 3px 6px; font-size: 10px; }
+          .chip-emoji { font-size: 11px; }
+          .chip-count { font-size: 8px; padding: 1px 4px; }
+          .chip-label { display: none; }
+          .nav-icon { font-size: 18px; }
+          .nav-item { font-size: 9px; padding: 6px 2px; }
+          .sos-btn { width: 48px; height: 48px; font-size: 13px; bottom: 70px; right: 10px; }
+          .resource-count-badge { font-size: 9px; padding: 3px 8px; }
+          .section-title { font-size: 17px; }
+          .alert-card { padding: 10px; }
+          .alert-title { font-size: 12px; }
+          .alert-text { font-size: 11px; }
+          .setting-label { font-size: 13px; }
+          .setting-toggle { padding: 6px 14px; font-size: 12px; }
+          .settings-container { padding: 16px 12px; }
+          .safe-toast { font-size: 12px; padding: 8px 16px; }
+        }
+
+        /* Standard phones (391px – 430px) */
+        @media (min-width: 391px) and (max-width: 430px) {
+          .header-logo { font-size: 16px; }
+          .chip { padding: 4px 7px; font-size: 10px; }
+          .chip-label { max-width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .sos-btn { width: 50px; height: 50px; font-size: 14px; bottom: 72px; }
+          .nav-item { font-size: 9px; }
+          .nav-icon { font-size: 19px; }
+        }
+
+        /* Large phones / phablets (431px – 767px) */
+        @media (min-width: 431px) and (max-width: 767px) {
+          .header-logo { font-size: 17px; }
+          .chip { padding: 4px 8px; font-size: 11px; }
+        }
+
+        /* Tablets (768px+) */
+        @media (min-width: 768px) {
+          .guardian-header { padding: 12px 24px; }
+          .header-logo { font-size: 20px; }
+          .category-chips { gap: 8px; }
+          .chip { padding: 6px 12px; font-size: 12px; }
+          .sos-btn { width: 60px; height: 60px; font-size: 17px; bottom: 84px; right: 20px; }
+          .nav-item { font-size: 11px; padding: 10px 6px; }
+          .nav-icon { font-size: 22px; }
+          .alerts-container { padding: 24px; }
+          .alert-card { padding: 18px; }
+          .settings-container { padding: 32px 24px; }
+        }
       `}</style>
     </div>
   );
 }
-
-// ── Nav bar item style helper ──────────────────────────────────────────
-function navItemStyle(active: boolean): React.CSSProperties {
-  return {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '8px 4px',
-    fontFamily: SYSTEM_FONT_STACK,
-    fontSize: '10px',
-    fontWeight: active ? 700 : 500,
-    color: active ? THEME.primary : THEME.textMuted,
-    cursor: 'pointer',
-    border: 'none',
-    background: 'none',
-    position: 'relative',
-    transition: 'color 0.15s ease',
-  };
-}
-
-const NAV_ICON_STYLE: React.CSSProperties = {
-  fontSize: '20px',
-  marginBottom: '2px',
-};
