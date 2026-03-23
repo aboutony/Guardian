@@ -121,14 +121,20 @@ export default function App() {
     try { localStorage.setItem('guardian_lang', lang); } catch {}
   }, [lang]);
 
-  // Apply blackout class to body
+  // ═══ Apply blackout class to BOTH html + body for full CSS cascade ═══
   useEffect(() => {
+    const targets = [document.documentElement, document.body];
     if (blackout) {
-      document.body.classList.add('blackout-mode');
+      targets.forEach((el) => el.classList.add('blackout-mode'));
+      document.body.style.backgroundColor = '#000000';
     } else {
-      document.body.classList.remove('blackout-mode');
+      targets.forEach((el) => el.classList.remove('blackout-mode'));
+      document.body.style.backgroundColor = '#05070A';
     }
     try { localStorage.setItem('guardian_blackout', String(blackout)); } catch {}
+    return () => {
+      targets.forEach((el) => el.classList.remove('blackout-mode'));
+    };
   }, [blackout]);
 
   const handleLangChange = useCallback((newLang: Lang) => setLang(newLang), []);

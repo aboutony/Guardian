@@ -4,22 +4,11 @@
 @import 'leaflet/dist/leaflet.css';
 
 /* Guardian App Custom Styles */
-.scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
-}
-.scrollbar-thin::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-}
-.scrollbar-thin::-webkit-scrollbar-thumb {
-  background: rgba(0, 209, 255, 0.3);
-  border-radius: 10px;
-}
-.scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 209, 255, 0.5);
-}
+.scrollbar-thin::-webkit-scrollbar { width: 6px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0, 209, 255, 0.3); border-radius: 10px; }
+.scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(0, 209, 255, 0.5); }
 
-/* Animations */
 @keyframes pulse-glow {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
@@ -36,29 +25,41 @@
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
 }
-.leaflet-popup-tip {
-  background: rgba(5, 7, 10, 0.95) !important;
-}
+.leaflet-popup-tip { background: rgba(5, 7, 10, 0.95) !important; }
 .leaflet-control-zoom { display: none !important; }
 .leaflet-control-attribution { display: none !important; }
 
 /* ═══════════════════════════════════════════════════════════════
-   BLACKOUT MODE — Pure black for OLED / zero light emission
+   BLACKOUT MODE — Pure OLED black, zero light emission
+   Applied to html.blackout-mode via document.documentElement
    ═══════════════════════════════════════════════════════════════ */
 
+.blackout-mode {
+  --bg-primary: #000000 !important;
+  --panel-bg: rgba(20, 20, 20, 0.9) !important;
+  --border-color: #333333 !important;
+}
+
+.blackout-mode body,
 .blackout-mode {
   background-color: #000000 !important;
 }
 
-.blackout-mode .glass-panel,
+/* Force all glass panels to pure black */
 .blackout-mode .backdrop-blur-xl,
-.blackout-mode .backdrop-blur-2xl {
-  background: #000000 !important;
+.blackout-mode .backdrop-blur-2xl,
+.blackout-mode .glass-panel {
+  background: rgba(20, 20, 20, 0.9) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* Force all borders to visible #333 */
+.blackout-mode [class*="border-white"] {
   border-color: #333333 !important;
 }
 
+/* Leaflet popups */
 .blackout-mode .leaflet-popup-content-wrapper {
   background: #000000 !important;
   border: 1px solid #333333 !important;
@@ -68,15 +69,15 @@
   background: #000000 !important;
 }
 
-/* Blackout: lower map tile brightness */
+/* Reduce map tile brightness + contrast for eye comfort */
 .blackout-mode .leaflet-tile-pane {
-  filter: brightness(0.4) !important;
+  opacity: 0.7 !important;
+  filter: brightness(0.8) contrast(1.2) !important;
 }
 
-/* Blackout: force border visibility */
-.blackout-mode [class*="border-white/10"],
-.blackout-mode [class*="border-white/20"] {
-  border-color: #333333 !important;
+/* Reduce overall screen glare */
+.blackout-mode .leaflet-container {
+  background: #000000 !important;
 }
 
 /* RTL Support */
