@@ -1,6 +1,4 @@
-/* ═══════════════════════════════════════════════════════════════════ */
-/* Guardian — tailwind.css                                            */
-/* Vanguard V1.1: Tailwind v4 entry point                             */
-/* ═══════════════════════════════════════════════════════════════════ */
+@import 'tailwindcss' source(none);
+@source '../**/*.{js,ts,jsx,tsx}';
 
-@import "tailwindcss";
+@import 'tw-animate-css';
