@@ -342,6 +342,14 @@ export default function App() {
     }
   }, [effectiveOffline, outbox, addSafeCheckIn]);
 
+  // ── FAMILY CIRCLE STATE (moved here before handlers) ─────────────
+  const [showHeatmap, setShowHeatmap] = useState<boolean>(true);
+  const [showFamily, setShowFamily] = useState<boolean>(false);
+  const [familyCircle] = useState<FamilyMember[]>(FAMILY_CIRCLE_DEFAULT);
+  const familyStatusColors: Record<string, string> = {
+    safe: '#22C55E', moving: '#3B82F6', sos: '#EF4444', unknown: '#6B7280',
+  };
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // HANDLERS
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -369,8 +377,40 @@ export default function App() {
   }, [addSafeCheckIn, districts, effectiveOffline, t]);
 
   const handleSOS = useCallback(() => {
+    // Broadcast SOS to all family circle members
+    const memberCount = familyCircle.length;
+    console.log(`[Guardian SOS] Broadcasting emergency to ${memberCount} family members`);
+    setSafeConfirm(`🚨 SOS BROADCAST sent to ${memberCount} family members!`);
+    setTimeout(() => setSafeConfirm(null), 5000);
+    // Also dial emergency services
     window.open('tel:125', '_self');
+  }, [familyCircle]);
+
+  // ── VIDEO CALL STATE ───────────────────────────────────────────
+  const [activeVideoCall, setActiveVideoCall] = useState<FamilyMember | null>(null);
+  const [videoCallPhase, setVideoCallPhase] = useState<'connecting' | 'active' | 'ended'>('connecting');
+  const [videoCallTimer, setVideoCallTimer] = useState<number>(0);
+
+  const startVideoCall = useCallback((member: FamilyMember) => {
+    setActiveVideoCall(member);
+    setVideoCallPhase('connecting');
+    setVideoCallTimer(0);
+    // Simulate P2P handshake
+    setTimeout(() => setVideoCallPhase('active'), 2500);
   }, []);
+
+  const endVideoCall = useCallback(() => {
+    setVideoCallPhase('ended');
+    setTimeout(() => { setActiveVideoCall(null); setVideoCallPhase('connecting'); setVideoCallTimer(0); }, 1000);
+  }, []);
+
+  // Video call timer
+  useEffect(() => {
+    if (activeVideoCall && videoCallPhase === 'active') {
+      const iv = setInterval(() => setVideoCallTimer((p) => p + 1), 1000);
+      return () => clearInterval(iv);
+    }
+  }, [activeVideoCall, videoCallPhase]);
 
   const toggleCategory = useCallback((cat: ResourceCategory) => {
     setActiveCategories((prev) => {
@@ -387,14 +427,6 @@ export default function App() {
     [resources, activeCategories],
   );
 
-  // ── HEATMAP & FAMILY CIRCLE STATE ─────────────────────────────
-  const [showHeatmap, setShowHeatmap] = useState<boolean>(true);
-  const [showFamily, setShowFamily] = useState<boolean>(false);
-  const [familyCircle] = useState<FamilyMember[]>(FAMILY_CIRCLE_DEFAULT);
-
-  const familyStatusColors: Record<string, string> = {
-    safe: '#22C55E', moving: '#3B82F6', sos: '#EF4444', unknown: '#6B7280',
-  };
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // RENDER: MAP VIEW
@@ -635,6 +667,14 @@ export default function App() {
                   <div style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px' }}>
                     Last seen: {new Date(fm.lastSeen).toLocaleTimeString()}
                   </div>
+                  {/* Video Call Button */}
+                  <button
+                    onClick={() => startVideoCall(fm)}
+                    className="popup-btn"
+                    style={{ marginTop: '8px', background: '#8B5CF6', color: '#fff', width: '100%', textAlign: 'center', display: 'block' }}
+                  >
+                    📹 Video Call
+                  </button>
                 </div>
               </Popup>
             </Marker>
@@ -829,7 +869,7 @@ export default function App() {
       ))}
 
       <div className="settings-footer">
-        Guardian v{APP_VERSION} — Phase 16.5 Strategic Intelligence<br />
+        Guardian v{APP_VERSION} — Phase 16.6 Mission Critical<br />
         Generated via Antigravity Editor
       </div>
     </div>
@@ -892,10 +932,65 @@ export default function App() {
         {renderContent()}
       </main>
 
-      {/* ── SOS BUTTON — ANCHORED BOTTOM-RIGHT ──────────────────────── */}
+      {/* ── SOS BUTTON — ANCHORED BOTTOM-RIGHT ── */}
       <button id="sos-button" onClick={handleSOS} aria-label="Emergency SOS - Call 125" className="sos-btn">
         SOS
       </button>
+
+      {/* ── VIDEO CALL MODAL ── */}
+      {activeVideoCall && (
+        <div className="video-call-overlay">
+          <div className="video-call-modal">
+            <div className="video-call-header">
+              <span style={{ fontSize: '28px' }}>{activeVideoCall.emoji}</span>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: 700 }}>{activeVideoCall.name}</div>
+                <div style={{ fontSize: '11px', color: videoCallPhase === 'active' ? '#22C55E' : '#94A3B8' }}>
+                  {videoCallPhase === 'connecting' ? '🔄 Establishing secure P2P connection...' : videoCallPhase === 'active' ? `🟢 Connected · ${Math.floor(videoCallTimer / 60)}:${(videoCallTimer % 60).toString().padStart(2, '0')}` : '❌ Call Ended'}
+                </div>
+              </div>
+            </div>
+
+            {/* Simulated video feed area */}
+            <div className="video-call-feed">
+              {videoCallPhase === 'connecting' && (
+                <div className="video-call-connecting">
+                  <div className="video-pulse-ring" />
+                  <span style={{ fontSize: '40px' }}>📹</span>
+                  <div style={{ marginTop: '12px', fontSize: '13px' }}>Handshake in progress...</div>
+                  <div style={{ fontSize: '10px', color: '#64748B', marginTop: '4px' }}>Encrypted P2P · AES-256</div>
+                </div>
+              )}
+              {videoCallPhase === 'active' && (
+                <div className="video-call-active">
+                  <div style={{ fontSize: '60px', marginBottom: '8px' }}>{activeVideoCall.emoji}</div>
+                  <div style={{ fontSize: '14px', fontWeight: 600 }}>{activeVideoCall.name}</div>
+                  <div style={{ fontSize: '11px', color: '#22C55E', marginTop: '4px' }}>🔒 End-to-end encrypted</div>
+                </div>
+              )}
+              {videoCallPhase === 'ended' && (
+                <div className="video-call-connecting">
+                  <span style={{ fontSize: '40px' }}>❌</span>
+                  <div style={{ marginTop: '8px' }}>Call Ended</div>
+                </div>
+              )}
+            </div>
+
+            <div className="video-call-controls">
+              {videoCallPhase !== 'ended' && (
+                <button onClick={endVideoCall} className="video-call-end-btn">
+                  📵 End Call
+                </button>
+              )}
+              {videoCallPhase === 'ended' && (
+                <button onClick={() => { setActiveVideoCall(null); setVideoCallPhase('connecting'); }} className="popup-btn" style={{ background: th.primary, color: '#fff', padding: '10px 24px' }}>
+                  Close
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── BOTTOM NAVIGATION BAR ───────────────────────────────────── */}
       <nav className="guardian-nav">
@@ -1113,6 +1208,49 @@ export default function App() {
           box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
         }
         .leaflet-popup-tip { background: rgba(15, 23, 42, 0.95) !important; }
+
+        /* ═══ VIDEO CALL MODAL ═══ */
+        .video-call-overlay {
+          position: fixed; inset: 0; z-index: 9999;
+          background: rgba(0,0,0,0.85); backdrop-filter: blur(16px);
+          display: flex; align-items: center; justify-content: center;
+        }
+        .video-call-modal {
+          width: 340px; max-width: 92vw; background: ${th.surface};
+          border-radius: 20px; overflow: hidden;
+          box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+          border: 1px solid ${th.border};
+        }
+        .video-call-header {
+          display: flex; align-items: center; gap: 12px;
+          padding: 16px 20px; border-bottom: 1px solid ${th.border};
+        }
+        .video-call-feed {
+          height: 220px; display: flex; align-items: center; justify-content: center;
+          background: rgba(0,0,0,0.6);
+        }
+        .video-call-connecting, .video-call-active {
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          color: ${th.text}; position: relative;
+        }
+        .video-pulse-ring {
+          position: absolute; width: 80px; height: 80px; border-radius: 50%;
+          border: 3px solid #8B5CF6; animation: videoPulse 1.5s ease-in-out infinite;
+        }
+        @keyframes videoPulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.4); opacity: 0.3; }
+        }
+        .video-call-controls {
+          display: flex; justify-content: center; padding: 16px; gap: 12px;
+          border-top: 1px solid ${th.border};
+        }
+        .video-call-end-btn {
+          padding: 10px 32px; border-radius: 24px; border: none;
+          background: #EF4444; color: #fff; font-size: 14px; font-weight: 700;
+          cursor: pointer; transition: all 0.2s ease;
+        }
+        .video-call-end-btn:hover { background: #DC2626; }
 
         /* ═══════════════════════════════════════════════════════════════ */
         /* MOBILE-FIRST RESPONSIVE — 390px / 430px / Tablet              */

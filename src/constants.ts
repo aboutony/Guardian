@@ -389,9 +389,9 @@ export const ROUTE_COLORS = {
 // ---------------------------------------------------------------------------
 // 10. APP META
 // ---------------------------------------------------------------------------
-export const APP_VERSION = '16.5.0';
-export const APP_CODENAME = 'Strategic Intelligence';
-export const PHASE = 16.5;
+export const APP_VERSION = '16.6.0';
+export const APP_CODENAME = 'Mission Critical';
+export const PHASE = 16.6;
 
 // ---------------------------------------------------------------------------
 // 11. CAPACITY STATUS THRESHOLDS
