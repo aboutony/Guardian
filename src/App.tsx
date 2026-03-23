@@ -297,6 +297,50 @@ export default function App() {
   );
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // OFFLINE DETECTOR & OUTBOX QUEUE
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
+  const [offlineToast, setOfflineToast] = useState<string | null>(null);
+  const [simulateOffline, setSimulateOffline] = useState<boolean>(false);
+  const [outbox, setOutbox] = useState<Array<{ type: string; districtId: string; timestamp: number }>>(() => {
+    try { const s = localStorage.getItem('guardian_outbox'); return s ? JSON.parse(s) : []; } catch { return []; }
+  });
+
+  // Persist outbox
+  useEffect(() => {
+    try { localStorage.setItem('guardian_outbox', JSON.stringify(outbox)); } catch {}
+  }, [outbox]);
+
+  // Online/offline listeners
+  useEffect(() => {
+    const goOffline = () => { setIsOffline(true); setOfflineToast('📡 Offline Mode Active'); };
+    const goOnline = () => {
+      setIsOffline(false);
+      setOfflineToast('🟢 Connection Restored');
+      setTimeout(() => setOfflineToast(null), 3000);
+    };
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => { window.removeEventListener('offline', goOffline); window.removeEventListener('online', goOnline); };
+  }, []);
+
+  // Effective offline = real offline OR simulated
+  const effectiveOffline = isOffline || simulateOffline;
+
+  // Flush outbox when back online
+  useEffect(() => {
+    if (!effectiveOffline && outbox.length > 0) {
+      console.log(`[Guardian Outbox] Syncing ${outbox.length} queued pings...`);
+      outbox.forEach((item) => {
+        addSafeCheckIn(item.districtId);
+      });
+      setOutbox([]);
+      setOfflineToast(`✅ Synced ${outbox.length} queued check-ins`);
+      setTimeout(() => setOfflineToast(null), 3000);
+    }
+  }, [effectiveOffline, outbox, addSafeCheckIn]);
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // HANDLERS
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const handleResourceSelect = useCallback(
@@ -311,10 +355,16 @@ export default function App() {
 
   const handleSafeCheckIn = useCallback(() => {
     const nearest = districts[0] || { id: 'beirut' };
-    addSafeCheckIn(nearest.id);
-    setSafeConfirm('✅ Check-in sent! Stay safe.');
+    if (effectiveOffline) {
+      // Queue in outbox for later sync
+      setOutbox((prev) => [...prev, { type: 'safe_checkin', districtId: nearest.id, timestamp: Date.now() }]);
+      setSafeConfirm('📡 Queued for sync (offline)');
+    } else {
+      addSafeCheckIn(nearest.id);
+      setSafeConfirm(`✅ ${t('checkInSent')}`);
+    }
     setTimeout(() => setSafeConfirm(null), 3000);
-  }, [addSafeCheckIn, districts]);
+  }, [addSafeCheckIn, districts, effectiveOffline, t]);
 
   const handleSOS = useCallback(() => {
     window.open('tel:125', '_self');
@@ -631,6 +681,46 @@ export default function App() {
         <div className="setting-value">{safeCheckIns.length} recent</div>
       </div>
 
+      {/* Offline Status & Outbox */}
+      <div className="setting-row">
+        <div>
+          <div className="setting-label">{effectiveOffline ? '🔴' : '🟢'} Network Status</div>
+          <div className="setting-desc">{effectiveOffline ? 'Offline — queuing pings' : 'Online — real-time sync'}</div>
+        </div>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: effectiveOffline ? th.danger : th.success }}>
+          {effectiveOffline ? 'OFFLINE' : 'ONLINE'}
+        </div>
+      </div>
+
+      {outbox.length > 0 && (
+        <div className="setting-row">
+          <div className="setting-label">📤 Outbox Queue</div>
+          <div className="setting-value" style={{ color: th.warning }}>{outbox.length} pending</div>
+        </div>
+      )}
+
+      {/* Offline Test Button */}
+      <div className="setting-row">
+        <div>
+          <div className="setting-label">🧪 Offline Test</div>
+          <div className="setting-desc">Simulates network cut for caching verification</div>
+        </div>
+        <button
+          onClick={() => {
+            setSimulateOffline((p) => {
+              const next = !p;
+              setOfflineToast(next ? '🧪 Simulating offline mode' : '🟢 Simulation ended');
+              setTimeout(() => setOfflineToast(null), 3000);
+              return next;
+            });
+          }}
+          className={`setting-toggle ${simulateOffline ? 'toggle-on' : 'toggle-off'}`}
+          style={simulateOffline ? { background: th.warning, color: '#000' } : undefined}
+        >
+          {simulateOffline ? '● ACTIVE' : '○ TEST'}
+        </button>
+      </div>
+
       {/* Per-category breakdown */}
       <h3 className="section-subtitle">📊 {t('resourceBreakdown')}</h3>
       {ALL_CATEGORIES.map((cat) => (
@@ -641,7 +731,7 @@ export default function App() {
       ))}
 
       <div className="settings-footer">
-        Guardian v{APP_VERSION} — Phase 16.3 Localization & Theme<br />
+        Guardian v{APP_VERSION} — Phase 16.4 Offline Mesh & PWA<br />
         Generated via Antigravity Editor
       </div>
     </div>
@@ -668,8 +758,9 @@ export default function App() {
       <header className="guardian-header">
         <div className="header-logo">
           <span>🛡️</span>
-          <span>GUARDIAN</span>
+          <span>{t('appName')}</span>
           {isUltraLowPower && <span className="header-badge">LOW POWER</span>}
+          {effectiveOffline && <span className="header-badge" style={{ background: 'rgba(239,68,68,0.2)', color: '#EF4444' }}>OFFLINE</span>}
         </div>
         <div className="header-version">v{APP_VERSION}</div>
       </header>
@@ -689,6 +780,14 @@ export default function App() {
 
       {/* ── SAFE CONFIRM TOAST ──────────────────────────────────────── */}
       {safeConfirm && <div className="safe-toast">{safeConfirm}</div>}
+
+      {/* ── OFFLINE TOAST ── */}
+      {offlineToast && (
+        <div className="safe-toast" style={{
+          background: effectiveOffline ? 'rgba(239, 68, 68, 0.95)' : 'rgba(34, 197, 94, 0.95)',
+          color: effectiveOffline ? '#fff' : '#000',
+        }}>{offlineToast}</div>
+      )}
 
       {/* ── MAIN CONTENT ────────────────────────────────────────────── */}
       <main className="guardian-main">

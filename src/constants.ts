@@ -359,9 +359,9 @@ export const ROUTE_COLORS = {
 // ---------------------------------------------------------------------------
 // 10. APP META
 // ---------------------------------------------------------------------------
-export const APP_VERSION = '16.3.0';
-export const APP_CODENAME = 'Localization & Theme Engine';
-export const PHASE = 16.3;
+export const APP_VERSION = '16.4.0';
+export const APP_CODENAME = 'Offline Mesh & PWA';
+export const PHASE = 16.4;
 
 // ---------------------------------------------------------------------------
 // 11. CAPACITY STATUS THRESHOLDS
