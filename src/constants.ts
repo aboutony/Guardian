@@ -341,8 +341,38 @@ export const GUARDIAN_DATA: GuardianDataStore = {
     { id: 'dz-003', lat: 33.2700, lng: 35.2040, radiusKm: 0.8, severity: 'moderate', description: 'Road collapse — Tyre coastal road', reportedAt: '2026-03-23T04:20:00Z' },
     { id: 'dz-004', lat: 33.3789, lng: 35.4839, radiusKm: 0.6, severity: 'high', description: 'Heavy shelling — Nabatieh center', reportedAt: '2026-03-23T10:30:00Z' },
     { id: 'dz-005', lat: 34.0061, lng: 36.2021, radiusKm: 1.0, severity: 'critical', description: 'Active hostilities — Baalbek perimeter', reportedAt: '2026-03-23T11:00:00Z' },
+    { id: 'dz-006', lat: 33.8940, lng: 35.5015, radiusKm: 0.3, severity: 'high', description: 'Sniper corridor — Mar Mikhael district', reportedAt: '2026-03-23T09:15:00Z' },
+    { id: 'dz-007', lat: 33.5610, lng: 35.3680, radiusKm: 0.7, severity: 'moderate', description: 'Intermittent mortar fire — Saida outskirts', reportedAt: '2026-03-23T07:30:00Z' },
+    { id: 'dz-008', lat: 33.9800, lng: 35.6250, radiusKm: 0.4, severity: 'low', description: 'Suspicious device reported — Jounieh harbor', reportedAt: '2026-03-23T06:00:00Z' },
+    { id: 'dz-009', lat: 34.1200, lng: 35.6530, radiusKm: 0.5, severity: 'moderate', description: 'Landslide risk — Byblos mountain road', reportedAt: '2026-03-22T22:00:00Z' },
+    { id: 'dz-010', lat: 33.8480, lng: 35.9050, radiusKm: 0.9, severity: 'high', description: 'Artillery exchange — Zahle eastern perimeter', reportedAt: '2026-03-23T10:00:00Z' },
+    // Riyadh danger zones
+    { id: 'dz-r01', lat: 24.7100, lng: 46.7200, radiusKm: 0.6, severity: 'low', description: 'Flash flood warning — Wadi Hanifah basin', reportedAt: '2026-03-23T08:00:00Z' },
+    { id: 'dz-r02', lat: 24.6500, lng: 46.7000, radiusKm: 0.4, severity: 'moderate', description: 'Industrial fire — Al Malaz zone', reportedAt: '2026-03-23T07:15:00Z' },
   ],
 };
+
+// ---------------------------------------------------------------------------
+// FAMILY CIRCLE
+// ---------------------------------------------------------------------------
+export interface FamilyMember {
+  id: string;
+  name: string;
+  emoji: string;
+  lat: number;
+  lng: number;
+  lastSeen: string;
+  battery?: number;
+  status: 'safe' | 'moving' | 'sos' | 'unknown';
+}
+
+export const FAMILY_CIRCLE_DEFAULT: FamilyMember[] = [
+  { id: 'fam-01', name: 'Mom',    emoji: '👩', lat: 33.8890, lng: 35.4950, lastSeen: '2026-03-23T12:00:00Z', battery: 72, status: 'safe' },
+  { id: 'fam-02', name: 'Dad',    emoji: '👨', lat: 33.8750, lng: 35.5120, lastSeen: '2026-03-23T11:45:00Z', battery: 45, status: 'moving' },
+  { id: 'fam-03', name: 'Sister', emoji: '👧', lat: 33.8820, lng: 35.5080, lastSeen: '2026-03-23T10:30:00Z', battery: 88, status: 'safe' },
+  { id: 'fam-04', name: 'Brother',emoji: '👦', lat: 33.8600, lng: 35.5200, lastSeen: '2026-03-23T09:15:00Z', battery: 15, status: 'unknown' },
+  { id: 'fam-05', name: 'Grandma',emoji: '👵', lat: 33.9000, lng: 35.4800, lastSeen: '2026-03-23T08:00:00Z', battery: 60, status: 'safe' },
+];
 
 // ---------------------------------------------------------------------------
 // 9. OSRM / ROUTING CONSTANTS
@@ -359,9 +389,9 @@ export const ROUTE_COLORS = {
 // ---------------------------------------------------------------------------
 // 10. APP META
 // ---------------------------------------------------------------------------
-export const APP_VERSION = '16.4.0';
-export const APP_CODENAME = 'Offline Mesh & PWA';
-export const PHASE = 16.4;
+export const APP_VERSION = '16.5.0';
+export const APP_CODENAME = 'Strategic Intelligence';
+export const PHASE = 16.5;
 
 // ---------------------------------------------------------------------------
 // 11. CAPACITY STATUS THRESHOLDS

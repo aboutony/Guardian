@@ -28,10 +28,12 @@ import {
   getCapacityStatus,
   CAPACITY_RING_COLORS,
   TRANSLATIONS,
+  FAMILY_CIRCLE_DEFAULT,
   type GuardianResource,
   type DangerZone,
   type ResourceCategory,
   type TranslationKey,
+  type FamilyMember,
 } from './constants';
 import { useSafetyData } from './data/safetyData';
 import LowPowerListView from './components/LowPowerListView';
@@ -385,6 +387,15 @@ export default function App() {
     [resources, activeCategories],
   );
 
+  // ── HEATMAP & FAMILY CIRCLE STATE ─────────────────────────────
+  const [showHeatmap, setShowHeatmap] = useState<boolean>(true);
+  const [showFamily, setShowFamily] = useState<boolean>(false);
+  const [familyCircle] = useState<FamilyMember[]>(FAMILY_CIRCLE_DEFAULT);
+
+  const familyStatusColors: Record<string, string> = {
+    safe: '#22C55E', moving: '#3B82F6', sos: '#EF4444', unknown: '#6B7280',
+  };
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // RENDER: MAP VIEW
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -419,6 +430,26 @@ export default function App() {
               </button>
             );
           })}
+          {/* Risk Heatmap Toggle */}
+          <button
+            id="chip-heatmap"
+            onClick={() => setShowHeatmap((p) => !p)}
+            className={`chip ${showHeatmap ? 'chip-active' : 'chip-inactive'}`}
+            style={showHeatmap ? { background: 'rgba(239,68,68,0.85)', borderColor: '#EF4444' } : undefined}
+          >
+            <span className="chip-emoji">🔥</span>
+            <span className="chip-label">Risk</span>
+          </button>
+          {/* Family Circle Toggle */}
+          <button
+            id="chip-family"
+            onClick={() => setShowFamily((p) => !p)}
+            className={`chip ${showFamily ? 'chip-active' : 'chip-inactive'}`}
+            style={showFamily ? { background: 'rgba(168,85,247,0.85)', borderColor: '#A855F7' } : undefined}
+          >
+            <span className="chip-emoji">👨‍👩‍👧‍👦</span>
+            <span className="chip-label">Family</span>
+          </button>
         </div>
 
         {/* ── LEAFLET MAP ─────────────────────────────────────────── */}
@@ -540,6 +571,73 @@ export default function App() {
                 </div>
               </Popup>
             </Circle>
+          ))}
+
+          {/* Predictive Danger Heatmap Overlay */}
+          {showHeatmap && dangerZones.map((dz) => {
+            const ageMs = Date.now() - new Date(dz.reportedAt).getTime();
+            const ageHours = ageMs / (1000 * 60 * 60);
+            const intensity = Math.max(0.08, 0.35 - (ageHours * 0.02));
+            const sevMultiplier = dz.severity === 'critical' ? 2.5 : dz.severity === 'high' ? 2.0 : dz.severity === 'moderate' ? 1.5 : 1.0;
+            return (
+              <Circle
+                key={`heat-${dz.id}`}
+                center={[dz.lat, dz.lng]}
+                radius={dz.radiusKm * 1000 * sevMultiplier}
+                pathOptions={{
+                  color: 'transparent',
+                  fillColor: SEVERITY_COLORS[dz.severity],
+                  fillOpacity: intensity,
+                  weight: 0,
+                }}
+              />
+            );
+          })}
+
+          {/* Family Safety Circle Markers */}
+          {showFamily && familyCircle.map((fm) => (
+            <Marker
+              key={fm.id}
+              position={[fm.lat, fm.lng]}
+              icon={L.divIcon({
+                html: `<div style="
+                  font-size: 22px; width: 36px; height: 36px;
+                  display: flex; align-items: center; justify-content: center;
+                  background: rgba(168,85,247,0.9);
+                  border: 3px solid ${familyStatusColors[fm.status]};
+                  border-radius: 50%;
+                  box-shadow: 0 0 10px ${familyStatusColors[fm.status]}66;
+                ">${fm.emoji}</div>`,
+                className: 'guardian-marker',
+                iconSize: [36, 36],
+                iconAnchor: [18, 18],
+                popupAnchor: [0, -20],
+              })}
+            >
+              <Popup>
+                <div style={{ fontFamily: SYSTEM_FONT_STACK, fontSize: '13px', maxWidth: '200px' }}>
+                  <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>
+                    {fm.emoji} {fm.name}
+                  </div>
+                  <div style={{
+                    display: 'inline-block', padding: '2px 8px', borderRadius: '6px', fontSize: '10px',
+                    fontWeight: 700, marginBottom: '6px',
+                    background: familyStatusColors[fm.status] + '22',
+                    color: familyStatusColors[fm.status],
+                  }}>
+                    {fm.status === 'safe' ? '🟢 Safe' : fm.status === 'moving' ? '🔵 Moving' : fm.status === 'sos' ? '🔴 SOS' : '⚪ Unknown'}
+                  </div>
+                  {fm.battery != null && (
+                    <div style={{ fontSize: '11px', color: fm.battery < 20 ? '#EF4444' : '#94A3B8' }}>
+                      🔋 {fm.battery}%
+                    </div>
+                  )}
+                  <div style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px' }}>
+                    Last seen: {new Date(fm.lastSeen).toLocaleTimeString()}
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
           ))}
 
           {/* OSRM Safe Route Polylines */}
@@ -731,7 +829,7 @@ export default function App() {
       ))}
 
       <div className="settings-footer">
-        Guardian v{APP_VERSION} — Phase 16.4 Offline Mesh & PWA<br />
+        Guardian v{APP_VERSION} — Phase 16.5 Strategic Intelligence<br />
         Generated via Antigravity Editor
       </div>
     </div>
