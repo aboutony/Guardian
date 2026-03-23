@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { Drawer } from 'vaul';
 import {
   GUARDIAN_DATA,
   THEME,
@@ -444,47 +445,7 @@ export default function App() {
 
     return (
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-        {/* ── CATEGORY FILTER CHIPS ──────────────────────────────── */}
-        <div className="category-chips">
-          {ALL_CATEGORIES.map((cat) => {
-            const active = activeCategories.has(cat);
-            const count = categoryCounts[cat] || 0;
-            return (
-              <button
-                key={cat}
-                id={`chip-${cat}`}
-                onClick={() => toggleCategory(cat)}
-                className={`chip ${active ? 'chip-active' : 'chip-inactive'}`}
-              >
-                <span className="chip-emoji">{CATEGORY_ICONS[cat]}</span>
-                <span className="chip-label">{CATEGORY_LABELS[cat]?.en || cat}</span>
-                <span className="chip-count">{count}</span>
-              </button>
-            );
-          })}
-          {/* Risk Heatmap Toggle */}
-          <button
-            id="chip-heatmap"
-            onClick={() => setShowHeatmap((p) => !p)}
-            className={`chip ${showHeatmap ? 'chip-active' : 'chip-inactive'}`}
-            style={showHeatmap ? { background: 'rgba(239,68,68,0.85)', borderColor: '#EF4444' } : undefined}
-          >
-            <span className="chip-emoji">🔥</span>
-            <span className="chip-label">Risk</span>
-          </button>
-          {/* Family Circle Toggle */}
-          <button
-            id="chip-family"
-            onClick={() => setShowFamily((p) => !p)}
-            className={`chip ${showFamily ? 'chip-active' : 'chip-inactive'}`}
-            style={showFamily ? { background: 'rgba(168,85,247,0.85)', borderColor: '#A855F7' } : undefined}
-          >
-            <span className="chip-emoji">👨‍👩‍👧‍👦</span>
-            <span className="chip-label">Family</span>
-          </button>
-        </div>
-
-        {/* ── LEAFLET MAP ─────────────────────────────────────────── */}
+        {/* ── LEAFLET MAP (100% background) ── */}
         <MapContainer
           center={MAP_DEFAULT_CENTER}
           zoom={MAP_DEFAULT_ZOOM}
@@ -888,38 +849,35 @@ export default function App() {
   };
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // RENDER: APP SHELL
+  // RENDER: APP SHELL — MOBILE-FIRST GLASSMORPHISM
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+
   return (
-    <div className="guardian-app">
-      {/* ── HEADER ──────────────────────────────────────────────────── */}
-      <header className="guardian-header">
-        <div className="header-logo">
-          <span>🛡️</span>
-          <span>{t('appName')}</span>
-          {isUltraLowPower && <span className="header-badge">LOW POWER</span>}
-          {effectiveOffline && <span className="header-badge" style={{ background: 'rgba(239,68,68,0.2)', color: '#EF4444' }}>OFFLINE</span>}
-        </div>
-        <div className="header-version">v{APP_VERSION}</div>
+    <div className="guardian-app" dir={isRtl ? 'rtl' : 'ltr'} style={{ background: '#05070A' }}>
+
+      {/* ── FLOATING GLASS HEADER PILL ── */}
+      <header className="glass-header">
+        <span style={{ fontSize: '16px' }}>🛡️</span>
+        <span className="glass-header-title">{t('appName')}</span>
+        {isUltraLowPower && <span className="glass-badge">LOW POWER</span>}
+        {effectiveOffline && <span className="glass-badge glass-badge-danger">OFFLINE</span>}
+        <span className="glass-header-version">v{APP_VERSION}</span>
       </header>
 
-      {/* ── DANGER ZONE BANNER ──────────────────────────────────────── */}
+      {/* ── DANGER ZONE BANNER (overlays on map) ── */}
       {currentDanger && (
-        <div className="danger-banner" role="alert">
-          <span style={{ fontSize: '20px' }}>🚨</span>
-          <div>
-            <strong>DANGER — You are inside an active zone!</strong>
-            <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
-              {currentDanger.description}
-            </div>
+        <div className="danger-banner">
+          <span style={{ fontSize: '18px' }}>🚨</span>
+          <div style={{ flex: 1 }}>
+            <strong style={{ fontSize: '12px' }}>DANGER ZONE</strong>
+            <div style={{ fontSize: '10px', opacity: 0.8 }}>{currentDanger.description}</div>
           </div>
         </div>
       )}
 
-      {/* ── SAFE CONFIRM TOAST ──────────────────────────────────────── */}
+      {/* ── TOASTS (overlay) ── */}
       {safeConfirm && <div className="safe-toast">{safeConfirm}</div>}
-
-      {/* ── OFFLINE TOAST ── */}
       {offlineToast && (
         <div className="safe-toast" style={{
           background: effectiveOffline ? 'rgba(239, 68, 68, 0.95)' : 'rgba(34, 197, 94, 0.95)',
@@ -927,7 +885,7 @@ export default function App() {
         }}>{offlineToast}</div>
       )}
 
-      {/* ── MAIN CONTENT ────────────────────────────────────────────── */}
+      {/* ── MAIN CONTENT — MAP FILLS 100% ── */}
       <main className="guardian-main">
         {renderContent()}
       </main>
@@ -1021,61 +979,62 @@ export default function App() {
         /* ═══ RESET & BASE ═══ */
         .guardian-app {
           font-family: "Inter", ${SYSTEM_FONT_STACK};
-          background: ${th.background};
+          background: #05070A;
           color: ${th.text};
           height: 100dvh;
           display: flex;
           flex-direction: column;
           overflow: hidden;
+          position: relative;
         }
 
-        /* ═══ HEADER ═══ */
-        .guardian-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 10px 16px;
-          background: rgba(15, 23, 42, 0.92);
-          backdrop-filter: blur(12px);
-          border-bottom: 1px solid ${th.border};
+        /* ═══ FLOATING GLASS HEADER ═══ */
+        .glass-header {
+          position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+          padding: 8px 20px;
+          padding-top: calc(8px + env(safe-area-inset-top, 0px));
+          background: rgba(5, 7, 10, 0.72);
+          backdrop-filter: blur(20px) saturate(1.8);
+          -webkit-backdrop-filter: blur(20px) saturate(1.8);
+          border: 1px solid rgba(255,255,255,0.06);
+          border-top: none;
+          border-radius: 0 0 20px 20px;
           z-index: 1100;
-          flex-shrink: 0;
-        }
-        .header-logo {
           display: flex; align-items: center; gap: 8px;
-          font-size: 18px; font-weight: 800; letter-spacing: -0.5px;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+          white-space: nowrap;
         }
-        .header-badge {
-          font-size: 9px; padding: 2px 6px; border-radius: 4px;
+        .glass-header-title { font-size: 15px; font-weight: 800; letter-spacing: -0.3px; }
+        .glass-header-version { font-size: 10px; color: ${th.textMuted}; margin-left: auto; }
+        .glass-badge {
+          font-size: 8px; padding: 2px 6px; border-radius: 4px;
           background: ${OLED_COLORS.accent}33; color: ${OLED_COLORS.accent}; font-weight: 700;
         }
-        .header-version { font-size: 11px; color: ${th.textMuted}; }
+        .glass-badge-danger {
+          background: rgba(239,68,68,0.2); color: #EF4444;
+        }
 
         /* ═══ MAIN ═══ */
         .guardian-main { flex: 1; position: relative; overflow: hidden; }
 
-        /* ═══ CATEGORY CHIPS ═══ */
-        .category-chips {
-          position: absolute; top: 10px; left: 10px; right: 60px;
-          z-index: 1000; display: flex; flex-wrap: wrap; gap: 5px;
-        }
+        /* ═══ CHIP STYLES (reused in drawer) ═══ */
         .chip {
           display: flex; align-items: center; gap: 3px;
-          padding: 4px 8px; border-radius: 20px; font-size: 11px;
+          padding: 8px 14px; border-radius: 20px; font-size: 12px;
           font-weight: 600; font-family: ${SYSTEM_FONT_STACK};
           cursor: pointer; border: 1px solid; backdrop-filter: blur(8px);
-          transition: all 0.2s ease;
+          transition: all 0.2s ease; touch-action: manipulation;
         }
         .chip-active {
           background: rgba(37, 99, 235, 0.85); border-color: ${th.primary}; color: #fff;
         }
         .chip-inactive {
-          background: rgba(15, 23, 42, 0.8); border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.7);
+          background: rgba(15, 23, 42, 0.8); border-color: rgba(255,255,255,0.15); color: rgba(255,255,255,0.7);
         }
-        .chip-emoji { font-size: 13px; }
+        .chip-emoji { font-size: 14px; }
         .chip-label { }
         .chip-count {
-          font-size: 9px; background: rgba(255,255,255,0.15); padding: 1px 5px;
+          font-size: 9px; background: rgba(255,255,255,0.15); padding: 1px 6px;
           border-radius: 8px; min-width: 16px; text-align: center;
         }
 
@@ -1083,18 +1042,18 @@ export default function App() {
         .resource-count-badge {
           position: absolute; bottom: 12px; left: 12px; z-index: 1000;
           padding: 4px 10px; border-radius: 8px;
-          background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px);
+          background: rgba(5, 7, 10, 0.85); backdrop-filter: blur(8px);
           font-size: 11px; color: ${th.textMuted}; font-weight: 600;
-          border: 1px solid ${th.border};
+          border: 1px solid rgba(255,255,255,0.06);
         }
 
-        /* ═══ NAV PANEL ═══ */
+        /* ═══ NAV PANEL (overlay for routing) ═══ */
         .nav-panel {
-          position: absolute; top: 56px; left: 10px; right: 10px; z-index: 1000;
-          background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(12px);
-          border-radius: 12px; padding: 12px 16px;
+          position: absolute; top: 56px; left: 16px; right: 16px; z-index: 1000;
+          background: rgba(5, 7, 10, 0.82); backdrop-filter: blur(16px);
+          border-radius: 16px; padding: 12px 16px;
           display: flex; align-items: center; justify-content: space-between;
-          border: 1px solid ${th.border}; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+          border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 4px 20px rgba(0,0,0,0.4);
         }
         .nav-panel-cancel {
           padding: 6px 16px; border-radius: 8px; border: none;
@@ -1105,16 +1064,20 @@ export default function App() {
         .popup-btn {
           display: inline-block; padding: 4px 10px; border-radius: 6px;
           font-size: 11px; font-weight: 600; text-decoration: none;
-          margin-right: 6px; border: none; cursor: pointer;
+          margin-right: 6px; border: none; cursor: pointer; touch-action: manipulation;
         }
         .popup-btn-call { background: ${th.primary}; color: #fff; }
         .popup-btn-nav { background: ${th.success}; color: #000; }
 
-        /* ═══ DANGER BANNER ═══ */
+        /* ═══ DANGER BANNER (floating overlay) ═══ */
         .danger-banner {
+          position: fixed; top: 52px; left: 16px; right: 16px; z-index: 1050;
           display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-          background: #7F1D1D; border-bottom: 2px solid ${SEVERITY_COLORS.critical};
-          font-size: 13px; font-weight: 600; color: #FF6666; flex-shrink: 0;
+          background: rgba(127, 29, 29, 0.92); backdrop-filter: blur(12px);
+          border-radius: 12px;
+          border: 1px solid ${SEVERITY_COLORS.critical}44;
+          font-size: 12px; font-weight: 600; color: #FF6666;
+          box-shadow: 0 4px 16px rgba(255, 59, 48, 0.3);
         }
 
         /* ═══ SAFE TOAST ═══ */
@@ -1128,38 +1091,74 @@ export default function App() {
 
         /* ═══ SOS BUTTON ═══ */
         .sos-btn {
-          position: fixed; bottom: 76px; right: 16px;
+          position: fixed; bottom: 96px; right: 24px;
           width: 54px; height: 54px; border-radius: 50%; border: none;
           background: #FF3B30; color: #fff; font-size: 15px; font-weight: 900;
           cursor: pointer; z-index: 2000; display: flex;
           align-items: center; justify-content: center; letter-spacing: 1px;
           animation: sos-pulse 2s ease-in-out infinite;
           box-shadow: 0 4px 20px rgba(255, 59, 48, 0.5), 0 0 0 4px rgba(255, 59, 48, 0.2);
+          touch-action: manipulation;
         }
         @keyframes sos-pulse {
           0%, 100% { box-shadow: 0 4px 20px rgba(255,59,48,0.5), 0 0 0 4px rgba(255,59,48,0.2); transform: scale(1); }
           50% { box-shadow: 0 4px 30px rgba(255,59,48,0.8), 0 0 0 8px rgba(255,59,48,0.15); transform: scale(1.05); }
         }
 
-        /* ═══ BOTTOM NAV ═══ */
-        .guardian-nav {
+        /* ═══ FLOATING GLASS BOTTOM NAV ═══ */
+        .bottom-nav {
+          position: fixed; bottom: 16px; left: 16px; right: 16px;
+          padding-bottom: env(safe-area-inset-bottom, 0px);
+          background: rgba(5, 7, 10, 0.72);
+          backdrop-filter: blur(20px) saturate(1.8);
+          -webkit-backdrop-filter: blur(20px) saturate(1.8);
+          border: 1px solid rgba(255,255,255,0.06);
+          border-radius: 20px;
+          z-index: 1100;
           display: flex; align-items: stretch;
-          border-top: 1px solid ${th.border};
-          background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(12px);
-          z-index: 1100; flex-shrink: 0;
+          box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
         }
-        .nav-item {
+        .bnav-item {
           flex: 1; display: flex; flex-direction: column; align-items: center;
-          justify-content: center; padding: 8px 4px; font-size: 10px;
-          font-weight: 500; color: ${th.textMuted}; cursor: pointer;
-          border: none; background: none; position: relative; transition: color 0.15s ease;
+          justify-content: center; padding: 10px 4px; font-size: 10px;
+          font-weight: 500; color: rgba(255,255,255,0.45); cursor: pointer;
+          border: none; background: none; position: relative;
+          transition: all 0.2s ease; touch-action: manipulation;
         }
-        .nav-active { color: ${th.primary}; font-weight: 700; }
-        .nav-safe { flex: 1.4; color: #22C55E; font-weight: 800; letter-spacing: 0.5px; }
-        .nav-icon { font-size: 20px; margin-bottom: 2px; }
-        .nav-badge {
+        .bnav-active { color: ${th.primary}; font-weight: 700; }
+        .bnav-safe {
+          color: #22C55E; font-weight: 800;
+          background: rgba(34, 197, 94, 0.08); border-radius: 12px;
+        }
+        .bnav-icon { font-size: 20px; margin-bottom: 2px; }
+        .bnav-label { font-size: 10px; }
+        .bnav-badge {
           position: absolute; top: 6px; right: calc(50% - 16px);
-          width: 8px; height: 8px; border-radius: 50%; background: ${SEVERITY_COLORS.critical};
+          width: 7px; height: 7px; border-radius: 50%; background: ${SEVERITY_COLORS.critical};
+        }
+
+        /* ═══ VAUL DRAWER ═══ */
+        .drawer-overlay {
+          position: fixed; inset: 0; z-index: 1200;
+          background: rgba(0,0,0,0.5);
+        }
+        .drawer-content {
+          position: fixed; bottom: 0; left: 0; right: 0; z-index: 1300;
+          background: rgba(15, 23, 42, 0.96); backdrop-filter: blur(20px);
+          border-top-left-radius: 20px; border-top-right-radius: 20px;
+          padding: 12px 20px 32px; max-height: 50vh;
+          border-top: 1px solid rgba(255,255,255,0.08);
+        }
+        .drawer-handle {
+          width: 36px; height: 4px; border-radius: 2px;
+          background: rgba(255,255,255,0.2); margin: 0 auto 16px;
+        }
+        .drawer-title {
+          font-size: 15px; font-weight: 700; margin-bottom: 12px;
+          color: ${th.text};
+        }
+        .drawer-chips {
+          display: flex; flex-wrap: wrap; gap: 8px;
         }
 
         /* ═══ ALERTS ═══ */

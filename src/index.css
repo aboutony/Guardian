@@ -2,6 +2,12 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
+/* ─── Vanguard V1.2: Mobile Touch Optimization ─── */
+button, a, [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 @keyframes marker-slide-in {
   from { transform: translateY(20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
