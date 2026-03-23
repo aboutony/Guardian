@@ -1,6 +1,7 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+@import 'leaflet/dist/leaflet.css';
 
 /* Guardian App Custom Styles */
 .scrollbar-thin::-webkit-scrollbar {
@@ -33,4 +34,22 @@
 
 .animate-pulse-glow {
   animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Leaflet Overrides for dark tactical theme */
+.leaflet-popup-content-wrapper {
+  background: rgba(5, 7, 10, 0.95) !important;
+  color: #F1F5F9 !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+}
+.leaflet-popup-tip {
+  background: rgba(5, 7, 10, 0.95) !important;
+}
+.leaflet-control-zoom {
+  display: none !important;
+}
+.leaflet-control-attribution {
+  display: none !important;
 }
